@@ -71,9 +71,7 @@ public class AimAndShootTeleOp extends OpMode {
             // TELEMETRY — APRILTAG POSE
             // ===============================
             telemetry.addLine("=== APRILTAG POSE ===");
-            telemetry.addData("Pose X (m)", "%.3f", vision.getPoseX());
-            telemetry.addData("Pose Y (m)", "%.3f", vision.getPoseY());
-            telemetry.addData("Pose Z (m)", "%.3f", vision.getPoseZ());
+            telemetry.addData("BotPose", vision.getBotPose());
 
             // ===============================
             // TELEMETRY — DISTANCE

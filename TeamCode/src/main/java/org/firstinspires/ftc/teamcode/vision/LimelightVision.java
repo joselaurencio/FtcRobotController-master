@@ -4,19 +4,21 @@ import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.hardware.HardwareMap;
 
-import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
-
 public class LimelightVision {
 
     private final Limelight3A limelight;
     private LLResult latest;
 
     // =========================
-    // CONFIG CONSTANTS
+    // CONFIG (MEASURE THESE)
     // =========================
-    private static final double CAMERA_HEIGHT = 0.4445;    // meters
-    private static final double TARGET_HEIGHT = 0.6096;    // meters (goal)
-    private static final double CAMERA_PITCH_RAD = Math.toRadians(10);
+    private static final double CAMERA_HEIGHT = 0.4445; // meters
+    private static final double TARGET_HEIGHT = 0.7495; // meters
+    private static final double CAMERA_PITCH_DEG = 0.0; // degrees (positive = up)
+
+    // Area-based calibration (OPTIONAL)
+    private static final double AREA_SCALE = 32445.52;
+    private static final double AREA_EXPONENT = -1.996884;
 
     public LimelightVision(HardwareMap hardwareMap) {
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
@@ -24,27 +26,21 @@ public class LimelightVision {
         limelight.start();
     }
 
-    /** Call ONCE per loop */
+    /** Call once per loop */
     public void update() {
         latest = limelight.getLatestResult();
     }
 
     // =========================
-    // BASIC STATUS
+    // STATUS
     // =========================
-
     public boolean hasTarget() {
         return latest != null && latest.isValid();
     }
 
-    public boolean hasPose() {
-        return hasTarget() && latest.getBotpose_MT2() != null;
-    }
-
     // =========================
-    // LIMELIGHT 2D VALUES
+    // RAW LIMELIGHT VALUES
     // =========================
-
     public double getTx() {
         return hasTarget() ? latest.getTx() : 0.0;
     }
@@ -58,80 +54,42 @@ public class LimelightVision {
     }
 
     // =========================
-    // APRILTAG POSE (3D)
-    // =========================
-
-    public Pose3D getBotPose() {
-        return hasPose() ? latest.getBotpose_MT2() : null;
-    }
-
-    public double getPoseX() {
-        return hasPose() ? latest.getBotpose_MT2().getPosition().x : 0.0;
-    }
-
-    public double getPoseY() {
-        return hasPose() ? latest.getBotpose_MT2().getPosition().y : 0.0;
-    }
-
-    public double getPoseZ() {
-        return hasPose() ? latest.getBotpose_MT2().getPosition().z : 0.0;
-    }
-
-    // =========================
-    // DISTANCE CALCULATIONS
+    // DISTANCE METHODS
     // =========================
 
     /**
-     * AprilTag-based horizontal distance (BEST when available)
-     * Uses robot pose relative to tag (matches video)
-     */
-    public double getDistanceMeters() {
-        if (!hasPose()) return 0.0;
-
-        double x = getPoseX();
-        double z = getPoseZ();
-
-        return Math.hypot(x, z);
-    }
-
-    /**
-     * Trig-based distance fallback using ty
-     * Used when AprilTag pose is unavailable
+     * ✅ OFFICIAL Limelight distance method
+     * Uses fixed camera angle + ty
      */
     public double getTrigDistanceMeters() {
         if (!hasTarget()) return 0.0;
 
-        double tyRad = Math.toRadians(getTy());
-        double totalAngle = CAMERA_PITCH_RAD + tyRad;
+        double angleDeg = CAMERA_PITCH_DEG + getTy();
+        double angleRad = Math.toRadians(angleDeg);
 
-        if (totalAngle <= 0.01) return 0.0;
+        if (Math.abs(Math.tan(angleRad)) < 1e-6) return 0.0;
 
-        double heightDiff = TARGET_HEIGHT - CAMERA_HEIGHT;
-        return heightDiff / Math.tan(totalAngle);
+        return (TARGET_HEIGHT - CAMERA_HEIGHT) / Math.tan(angleRad);
     }
 
     /**
-     * Smart distance selector:
-     * - Prefer AprilTag pose
-     * - Fallback to trig distance
+     * ⚠️ Experimental area-based distance
+     * Requires careful calibration
+     */
+    public double getAreaDistanceMeters() {
+        if (!hasTarget()) return 0.0;
+
+        double ta = getTa();
+        if (ta <= 0.01) return 0.0;
+
+        // Convert from cm → meters
+        return (AREA_SCALE * Math.pow(ta, AREA_EXPONENT)) / 100.0;
+    }
+
+    /**
+     * Recommended distance for competition
      */
     public double getBestDistanceMeters() {
-        double poseDist = getDistanceMeters();
-        if (poseDist > 0.05) {
-            return poseDist;
-        }
         return getTrigDistanceMeters();
-    }
-
-    // =========================
-    // DEBUG / PAPER SUPPORT
-    // =========================
-
-    public boolean usingAprilTagDistance() {
-        return hasPose() && getDistanceMeters() > 0.05;
-    }
-
-    public LLResult getRawResult() {
-        return latest;
     }
 }

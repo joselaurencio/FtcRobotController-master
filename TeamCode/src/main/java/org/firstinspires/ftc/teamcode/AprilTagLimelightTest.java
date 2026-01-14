@@ -51,6 +51,13 @@ public class AprilTagLimelightTest extends OpMode {
         telemetry.update();
     }
 
+    /**
+     * Calculates the distance to an AprilTag by inverting a power regression model.
+     * * Logic: The original calibration yielded y = a * x^b, where y is area (ta)
+     * and x is distance. To find distance from area, we solve for x:
+     * x = (y / a)^(1 / b).
+     */
+
     public double getDistanceFromTag(double ta) {
         // If ta is 0, we avoid division by zero
         if (ta <= 0) return 0;

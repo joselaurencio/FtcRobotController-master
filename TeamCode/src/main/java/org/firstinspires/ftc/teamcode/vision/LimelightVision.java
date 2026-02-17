@@ -10,15 +10,11 @@ public class LimelightVision {
     private LLResult latest;
 
     // =========================
-    // CONFIG (MEASURE THESE)
+    // CALIBRATION CONSTANTS
     // =========================
-    private static final double CAMERA_HEIGHT = 0.4445; // meters
-    private static final double TARGET_HEIGHT = 0.7495; // meters
-    private static final double CAMERA_PITCH_DEG = 0.0; // degrees (positive = up)
-
-    // Area-based calibration (OPTIONAL)
-    private static final double AREA_SCALE = 32445.52;
-    private static final double AREA_EXPONENT = -1.996884;
+    // From your collected data + curve fitting
+    private static final double AREA_SCALE = 41061.19;
+    private static final double AREA_EXPONENT = -2.050188;
 
     public LimelightVision(HardwareMap hardwareMap) {
         limelight = hardwareMap.get(Limelight3A.class, "limelight");
@@ -26,27 +22,25 @@ public class LimelightVision {
         limelight.start();
     }
 
-    /** Call once per loop */
+    /** Call ONCE per loop */
     public void update() {
         latest = limelight.getLatestResult();
     }
 
     // =========================
-    // STATUS
+    // TARGET STATUS
     // =========================
+
     public boolean hasTarget() {
         return latest != null && latest.isValid();
     }
 
     // =========================
-    // RAW LIMELIGHT VALUES
+    // LIMELIGHT RAW VALUES
     // =========================
+
     public double getTx() {
         return hasTarget() ? latest.getTx() : 0.0;
-    }
-
-    public double getTy() {
-        return hasTarget() ? latest.getTy() : 0.0;
     }
 
     public double getTa() {
@@ -54,42 +48,28 @@ public class LimelightVision {
     }
 
     // =========================
-    // DISTANCE METHODS
+    // DISTANCE (AREA METHOD)
     // =========================
 
     /**
-     * ✅ OFFICIAL Limelight distance method
-     * Uses fixed camera angle + ty
+     * Distance to AprilTag using calibrated target area power model
+     * Units depend on calibration (cm or meters — be consistent!)
      */
-    public double getTrigDistanceMeters() {
-        if (!hasTarget()) return 0.0;
-
-        double angleDeg = CAMERA_PITCH_DEG + getTy();
-        double angleRad = Math.toRadians(angleDeg);
-
-        if (Math.abs(Math.tan(angleRad)) < 1e-6) return 0.0;
-
-        return (TARGET_HEIGHT - CAMERA_HEIGHT) / Math.tan(angleRad);
-    }
-
-    /**
-     * ⚠️ Experimental area-based distance
-     * Requires careful calibration
-     */
-    public double getAreaDistanceMeters() {
+    public double getDistanceFromArea() {
         if (!hasTarget()) return 0.0;
 
         double ta = getTa();
-        if (ta <= 0.01) return 0.0;
+        if (ta <= 0.0001) return 0.0;
 
-        // Convert from cm → meters
-        return (AREA_SCALE * Math.pow(ta, AREA_EXPONENT)) / 100.0;
+        // x = (ta / scale)^(1 / exponent)
+        return Math.pow((ta / AREA_SCALE), (1.0 / AREA_EXPONENT));
     }
 
-    /**
-     * Recommended distance for competition
-     */
-    public double getBestDistanceMeters() {
-        return getTrigDistanceMeters();
+    // =========================
+    // DEBUG SUPPORT
+    // =========================
+
+    public LLResult getRawResult() {
+        return latest;
     }
 }

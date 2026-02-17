@@ -8,7 +8,7 @@ import org.firstinspires.ftc.teamcode.math.ShooterModel;
 import org.firstinspires.ftc.teamcode.subsystems.Shooter;
 import org.firstinspires.ftc.teamcode.subsystems.Drivetrain;
 
-@TeleOp(name = "Aim + Shoot (Drivetrain)")
+@TeleOp(name = "Aim + Shoot (Area Distance)", group = "TeleOp")
 public class AimAndShootTeleOp extends OpMode {
 
     private LimelightVision vision;
@@ -22,47 +22,59 @@ public class AimAndShootTeleOp extends OpMode {
         drivetrain = new Drivetrain(hardwareMap);
 
         telemetry.addLine("Aim + Shoot TeleOp Initialized");
+        telemetry.addLine("Distance Method: Target Area (Power Model)");
         telemetry.update();
     }
 
     @Override
     public void loop() {
 
+        // Update Limelight once per loop
         vision.update();
+
+        shooter.setRPM(6000);
 
         if (vision.hasTarget()) {
 
+            // Vision measurements
             double tx = vision.getTx();
-            double ty = vision.getTy();
+            double ta = vision.getTa();
 
-            // ✅ Correct distance method
-            double distance = vision.getBestDistanceMeters();
+            // Distance from calibrated area regression
+            double distance = vision.getDistanceFromArea();
 
-            // Shooter model
-            double targetRPM = ShooterModel.distanceToRPM(distance);
+            // Convert distance → RPM
+            double targetRPM = ShooterModel.distanceToRPM(distance) *.1;
 
-            // Control
-            drivetrain.alignToTarget(tx);
-            shooter.setRPM(targetRPM);
+            // Align drivetrain and spin shooter
+            //drivetrain.alignToTarget(tx);
+            //shooter.setRPM(targetRPM);
 
-            // ===============================
+            // =====================
             // TELEMETRY
-            // ===============================
+            // =====================
             telemetry.addLine("=== LIMELIGHT ===");
+            telemetry.addData("Has Target", true);
             telemetry.addData("tx (deg)", "%.2f", tx);
-            telemetry.addData("ty (deg)", "%.2f", ty);
-            telemetry.addData("ta", "%.2f", vision.getTa());
+            telemetry.addData("ta", "%.4f", ta);
 
             telemetry.addLine("=== DISTANCE ===");
-            telemetry.addData("Distance (m)", "%.3f", distance);
+            telemetry.addData("Distance", "%.2f", distance);
 
             telemetry.addLine("=== SHOOTER ===");
             telemetry.addData("Target RPM", "%.1f", targetRPM);
             telemetry.addData("Actual RPM", "%.1f", shooter.getRPM());
+            telemetry.addData("At Speed", shooter.atSpeed());
 
         } else {
+
+            // No target → stop rotation + shooter safely
             drivetrain.stop();
-            telemetry.addLine("No target detected");
+            shooter.setRPM(0);
+
+            telemetry.addLine("=== LIMELIGHT ===");
+            telemetry.addData("Has Target", false);
+            telemetry.addLine("Waiting for AprilTag...");
         }
 
         telemetry.update();

@@ -63,7 +63,7 @@ public class ManualAndVisionTeleOp extends OpMode {
 
         // Intake hardware names MUST match config
         intake = hardwareMap.get(DcMotor.class, "intake");
-        leftFeeder = hardwareMap.get(CRServo.class, "leftFeederServo");
+        leftFeeder = hardwareMap.get(CRServo.class, "left_feeder");
         rightFeeder = hardwareMap.get(CRServo.class, "rightFeederServo");
 
         intake.setPower(0);

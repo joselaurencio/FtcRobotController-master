@@ -13,10 +13,10 @@ public class Shooter {
     private double targetRPM = 0;
 
     public Shooter(@NonNull HardwareMap hardwareMap) {
-        leftmotor = hardwareMap.get(DcMotorEx.class, "leftShooterMotor");
+        leftmotor = hardwareMap.get(DcMotorEx.class, "left_launcher");
         leftmotor.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         leftmotor.setDirection(DcMotorSimple.Direction.REVERSE);
-        rightmotor = hardwareMap.get(DcMotorEx.class, "rightShooterMotor");
+        rightmotor = hardwareMap.get(DcMotorEx.class, "right_launcher");
         rightmotor.setMode(DcMotorEx.RunMode.RUN_USING_ENCODER);
         rightmotor.setDirection(DcMotorSimple.Direction.FORWARD);
     }

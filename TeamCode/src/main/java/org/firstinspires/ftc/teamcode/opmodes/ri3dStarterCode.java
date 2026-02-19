@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode;
+package org.firstinspires.ftc.teamcode.opmodes;
 
 import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
@@ -11,21 +11,25 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import org.firstinspires.ftc.teamcode.vision.LimelightVision;
 
-/*
- * This file includes a teleop (driver-controlled) file for the goBILDA® Robot in 3 Days for the
- * 2025-2026 FIRST® Tech Challenge season DECODE™!
- */
+
+import org.firstinspires.ftc.teamcode.math.ShooterModel;
+import org.firstinspires.ftc.teamcode.subsystems.Shooter;
 
 @TeleOp(name = "DECODE Ri3D", group = "StarterBot")
 //@Disabled
 public class ri3dStarterCode extends OpMode {
-    final double FEED_TIME_SECONDS = 0.80; //The feeder servos run this long when a shot is requested.
+    final double FEED_TIME_SECONDS = .8; //The feeder servos run this long when a shot is requested.
     final double STOP_SPEED = 0.0; //We send this power to the servos when we want them to stop.
     final double FULL_SPEED = 1.0;
 
-    final double LAUNCHER_CLOSE_TARGET_VELOCITY = 1200; //in ticks/second for the close goal.
-    final double LAUNCHER_CLOSE_MIN_VELOCITY = 1175; //minimum required to start a shot for close goal.
+    final double RPM_CLOSE_TARGET = 3500;
+    final double RPM_CLOSE_MIN = 3000;
+
+
+    final double LAUNCHER_CLOSE_TARGET_VELOCITY = RPM_CLOSE_TARGET * 28 / 60.0; //in ticks/second for the close goal.
+    final double LAUNCHER_CLOSE_MIN_VELOCITY = RPM_CLOSE_MIN * 28 / 60.0; //minimum required to start a shot for close goal.
 
     final double LAUNCHER_FAR_TARGET_VELOCITY = 1350; //Target velocity for far goal
     final double LAUNCHER_FAR_MIN_VELOCITY = 1325; //minimum required to start a shot for far goal.
@@ -35,7 +39,8 @@ public class ri3dStarterCode extends OpMode {
 
     final double LEFT_POSITION = 0.2962; //the left and right position for the diverter servo
     final double RIGHT_POSITION = 0;
-
+    private boolean lastBack = false;
+    private Shooter shooter;
     // Declare OpMode members.
     private DcMotor leftFrontDrive = null;
     private DcMotor rightFrontDrive = null;
@@ -47,6 +52,8 @@ public class ri3dStarterCode extends OpMode {
     private CRServo leftFeeder = null;
     private CRServo rightFeeder = null;
     private Servo diverter = null;
+
+    private LimelightVision limelight;
 
     ElapsedTime leftFeederTimer = new ElapsedTime();
     ElapsedTime rightFeederTimer = new ElapsedTime();
@@ -71,6 +78,12 @@ public class ri3dStarterCode extends OpMode {
         ON,
         OFF;
     }
+
+    private enum ShooterMode {
+        MANUAL,
+        VISION
+    }
+    private ShooterMode shooterMode = ShooterMode.MANUAL;
 
     private IntakeState intakeState = IntakeState.OFF;
 
@@ -106,6 +119,9 @@ public class ri3dStarterCode extends OpMode {
         rightFeeder = hardwareMap.get(CRServo.class, "right_feeder");
         diverter = hardwareMap.get(Servo.class, "diverter");
 
+        limelight = new LimelightVision(hardwareMap);
+
+
         /*
          * To drive forward, most robots need the motor on one side to be reversed,
          * because the axles point in opposite directions. Pushing the left stick forward
@@ -118,9 +134,12 @@ public class ri3dStarterCode extends OpMode {
         leftBackDrive.setDirection(DcMotor.Direction.REVERSE);
         rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
 
-        leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
 
         intake.setDirection(DcMotorSimple.Direction.REVERSE);
+
+
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -151,7 +170,7 @@ public class ri3dStarterCode extends OpMode {
          * both work to feed the ball into the robot.
          */
         rightFeeder.setDirection(DcMotorSimple.Direction.REVERSE);
-
+        leftFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
         /*
          * Tell the driver that initialization is complete.
          */
@@ -178,19 +197,48 @@ public class ri3dStarterCode extends OpMode {
     @Override
     public void loop() {
 
-        mecanumDrive(-gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+        limelight.update();
 
-        /*
-         * Here we give the user control of the speed of the launcher motor without automatically
-         * queuing a shot.
-         */
-        if (gamepad1.y) {
-            leftLauncher.setVelocity(launcherTarget);
-            rightLauncher.setVelocity(launcherTarget);
-        } else if (gamepad1.b) { // stop flywheel
-            leftLauncher.setVelocity(STOP_SPEED);
-            rightLauncher.setVelocity(STOP_SPEED);
+// Toggle vision mode with BACK button
+        if (gamepad1.back && !lastBack) {
+            if (shooterMode == ShooterMode.MANUAL) {
+                shooterMode = ShooterMode.VISION;
+            } else {
+                shooterMode = ShooterMode.MANUAL;
+            }
         }
+        lastBack = gamepad1.back;
+
+        mecanumDrive(gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+
+        if (gamepad1.y) {
+
+            if (shooterMode == ShooterMode.MANUAL) {
+
+                leftLauncher.setVelocity(launcherTarget);
+                rightLauncher.setVelocity(launcherTarget);
+
+            } else if (shooterMode == ShooterMode.VISION) {
+
+                if (limelight.hasTarget()) {
+
+                    double distanceCm = limelight.getDistanceFromArea(); // <-- use YOUR function
+                    double distanceMeters = distanceCm / 100.0;
+
+                    double rpm = ShooterModel.distanceToRPM(distanceMeters);
+
+                    // Convert RPM to ticks/sec
+                    double ticksPerSecond = rpm * 28.0 / 60.0;
+
+                    launcherTarget = ticksPerSecond;
+                    launcherMin = ticksPerSecond * 0.9; // 90% threshold
+
+                    leftLauncher.setVelocity(ticksPerSecond);
+                    rightLauncher.setVelocity(ticksPerSecond);
+                }
+            }
+        }
+
 
         if (gamepad1.dpadDownWasPressed()) {
             switch (diverterDirection){
@@ -214,6 +262,19 @@ public class ri3dStarterCode extends OpMode {
                 case OFF:
                     intakeState = IntakeState.ON;
                     intake.setPower(1);
+                    break;
+            }
+        }
+
+        if (gamepad1.xWasPressed()){
+            switch (intakeState){
+                case ON:
+                    intakeState = IntakeState.OFF;
+                    intake.setPower(-1);
+                    break;
+                case OFF:
+                    intakeState = IntakeState.ON;
+                    intake.setPower(0);
                     break;
             }
         }
@@ -242,10 +303,24 @@ public class ri3dStarterCode extends OpMode {
         /*
          * Show the state and motor powers
          */
-        telemetry.addData("State", leftLaunchState);
+
+        final double leftLauncherV = 60 * leftLauncher.getVelocity();
+        final double leftLauncherV2 = leftLauncherV/28;
+
+        final double rightLauncherV = 60 * rightLauncher.getVelocity();
+        final double rightLauncherV2 = rightLauncherV/28;
+
+        telemetry.addData("Shooter Mode", shooterMode);
+
+        if (limelight.hasTarget()) {
+            telemetry.addData("Distance (cm)", limelight.getDistanceFromArea());
+        }
+
+        telemetry.addData("Left Launch State", leftLaunchState);
+        telemetry.addData("Right Launch State", rightLaunchState);
         telemetry.addData("launch distance", launcherDistance);
-        telemetry.addData("Left Launcher Velocity", leftLauncher.getVelocity());
-        telemetry.addData("Right Launcher Velocity", rightLauncher.getVelocity());
+        telemetry.addData("Left Launcher Velocity", leftLauncherV2);
+        telemetry.addData("Right Launcher Velocity", rightLauncherV2);
 
     }
 
@@ -314,7 +389,7 @@ public class ri3dStarterCode extends OpMode {
             case SPIN_UP:
                 leftLauncher.setVelocity(launcherTarget);
                 rightLauncher.setVelocity(launcherTarget);
-                if (leftLauncher.getVelocity() > launcherMin) {
+                if (rightLauncher.getVelocity() > launcherMin) {
                     rightLaunchState = LaunchState.LAUNCH;
                 }
                 break;

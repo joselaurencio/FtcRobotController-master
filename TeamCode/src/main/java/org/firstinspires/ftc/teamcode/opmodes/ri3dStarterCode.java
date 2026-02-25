@@ -20,19 +20,30 @@ import org.firstinspires.ftc.teamcode.subsystems.Shooter;
 @TeleOp(name = "DECODE Ri3D", group = "StarterBot")
 //@Disabled
 public class ri3dStarterCode extends OpMode {
+    // ================= AUTO ALIGN PD =================
+    private double kP_heading = 0.02;   // Tune this
+    private double kD_heading = 0.003;  // Tune this
+
+    private double previousHeadingError = 0;
+
+    private final double HEADING_DEADBAND = 1.0; // degrees
+    private final double MAX_ROTATE_POWER = 0.6; // safety clamp
+    // ================================================
     final double FEED_TIME_SECONDS = .8; //The feeder servos run this long when a shot is requested.
     final double STOP_SPEED = 0.0; //We send this power to the servos when we want them to stop.
     final double FULL_SPEED = 1.0;
 
-    final double RPM_CLOSE_TARGET = 3500;
-    final double RPM_CLOSE_MIN = 3000;
-
+    final double RPM_CLOSE_TARGET = 2000;
+    final double RPM_CLOSE_MIN = 1900;
 
     final double LAUNCHER_CLOSE_TARGET_VELOCITY = RPM_CLOSE_TARGET * 28 / 60.0; //in ticks/second for the close goal.
     final double LAUNCHER_CLOSE_MIN_VELOCITY = RPM_CLOSE_MIN * 28 / 60.0; //minimum required to start a shot for close goal.
 
-    final double LAUNCHER_FAR_TARGET_VELOCITY = 1350; //Target velocity for far goal
-    final double LAUNCHER_FAR_MIN_VELOCITY = 1325; //minimum required to start a shot for far goal.
+    final double RPM_FAR_TARGET = 3200;
+    final double RPM_FAR_MIN = 3000;
+
+    final double LAUNCHER_FAR_TARGET_VELOCITY = RPM_FAR_TARGET * 28 / 60.0; //in ticks/second for the close goal.
+    final double LAUNCHER_FAR_MIN_VELOCITY = RPM_FAR_MIN * 28 / 60.0; //minimum required to start a shot for close goal.
 
     double launcherTarget = LAUNCHER_CLOSE_TARGET_VELOCITY; //These variables allow
     double launcherMin = LAUNCHER_CLOSE_MIN_VELOCITY;
@@ -83,8 +94,7 @@ public class ri3dStarterCode extends OpMode {
         MANUAL,
         VISION
     }
-    private ShooterMode shooterMode = ShooterMode.MANUAL;
-
+    private ShooterMode shooterMode = ShooterMode.VISION;
     private IntakeState intakeState = IntakeState.OFF;
 
     private enum LauncherDistance {
@@ -129,10 +139,10 @@ public class ri3dStarterCode extends OpMode {
          * Note: The settings here assume direct drive on left and right wheels. Gear
          * Reduction or 90 Deg drives may require direction flips
          */
-        leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
-        rightFrontDrive.setDirection(DcMotor.Direction.FORWARD);
-        leftBackDrive.setDirection(DcMotor.Direction.REVERSE);
-        rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
+        leftFrontDrive.setDirection(DcMotor.Direction.FORWARD);
+        rightFrontDrive.setDirection(DcMotor.Direction.REVERSE);
+        leftBackDrive.setDirection(DcMotor.Direction.FORWARD);
+        rightBackDrive.setDirection(DcMotor.Direction.REVERSE);
 
         leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
         rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -198,7 +208,19 @@ public class ri3dStarterCode extends OpMode {
     public void loop() {
 
         limelight.update();
+        // Continuously update RPM in Vision mode
+        if (shooterMode == ShooterMode.VISION && limelight.hasTarget()) {
 
+            double distanceCm = limelight.getDistanceFromArea();
+            double distanceMeters = distanceCm / 100.0;
+
+            double rpm = ShooterModel.distanceToRPM(distanceCm);
+
+            double ticksPerSecond = rpm * 28.0 / 60.0;
+
+            launcherTarget = ticksPerSecond;
+            launcherMin = ticksPerSecond * 0.95;
+        }
 // Toggle vision mode with BACK button
         if (gamepad1.back && !lastBack) {
             if (shooterMode == ShooterMode.MANUAL) {
@@ -209,34 +231,44 @@ public class ri3dStarterCode extends OpMode {
         }
         lastBack = gamepad1.back;
 
-        mecanumDrive(gamepad1.left_stick_y, gamepad1.left_stick_x, gamepad1.right_stick_x);
+        double forward = gamepad2.right_stick_x;
+        double strafe = -gamepad2.left_stick_x;
+        double rotate = gamepad2.left_stick_y;
+
+// ===== AUTO ALIGN BUTTON =====
+        boolean autoAlignActive = gamepad1.right_trigger > 0.5;
+
+        if (autoAlignActive && limelight.hasTarget()) {
+
+            double currentYaw = limelight.getTx(); // MUST return degrees (left/right offset)
+            double error = 0 - currentYaw; // target is centered = 0
+
+            double derivative = error - previousHeadingError;
+
+            double output = (error * kP_heading) + (derivative * kD_heading);
+
+            // Deadband to prevent jitter
+            if (Math.abs(error) < HEADING_DEADBAND) {
+                output = 0;
+            }
+
+            // Clamp rotation power
+            output = Math.max(-MAX_ROTATE_POWER, Math.min(MAX_ROTATE_POWER, output));
+
+            rotate = output;
+
+            previousHeadingError = error;
+
+        } else {
+            previousHeadingError = 0; // reset when not aligning
+        }
+
+        // Now drive with modified rotate
+        mecanumDrive(forward, strafe, rotate);
 
         if (gamepad1.y) {
-
-            if (shooterMode == ShooterMode.MANUAL) {
-
-                leftLauncher.setVelocity(launcherTarget);
-                rightLauncher.setVelocity(launcherTarget);
-
-            } else if (shooterMode == ShooterMode.VISION) {
-
-                if (limelight.hasTarget()) {
-
-                    double distanceCm = limelight.getDistanceFromArea(); // <-- use YOUR function
-                    double distanceMeters = distanceCm / 100.0;
-
-                    double rpm = ShooterModel.distanceToRPM(distanceMeters);
-
-                    // Convert RPM to ticks/sec
-                    double ticksPerSecond = rpm * 28.0 / 60.0;
-
-                    launcherTarget = ticksPerSecond;
-                    launcherMin = ticksPerSecond * 0.9; // 90% threshold
-
-                    leftLauncher.setVelocity(ticksPerSecond);
-                    rightLauncher.setVelocity(ticksPerSecond);
-                }
-            }
+            leftLauncher.setVelocity(launcherTarget);
+            rightLauncher.setVelocity(launcherTarget);
         }
 
 
@@ -311,7 +343,12 @@ public class ri3dStarterCode extends OpMode {
         final double rightLauncherV2 = rightLauncherV/28;
 
         telemetry.addData("Shooter Mode", shooterMode);
+        telemetry.addData("Auto Align Active", gamepad1.right_trigger > 0.5);
+        if (limelight.hasTarget()) {
+            telemetry.addData("Tag Yaw", limelight.getTx());
+        }
 
+        telemetry.addData("Vision Target TPS", launcherTarget);
         if (limelight.hasTarget()) {
             telemetry.addData("Distance (cm)", limelight.getDistanceFromArea());
         }
@@ -339,15 +376,18 @@ public class ri3dStarterCode extends OpMode {
          */
         double denominator = Math.max(Math.abs(forward) + Math.abs(strafe) + Math.abs(rotate), 1);
 
+
         leftFrontPower = (forward + strafe + rotate) / denominator;
         rightFrontPower = (forward - strafe - rotate) / denominator;
         leftBackPower = (forward - strafe + rotate) / denominator;
         rightBackPower = (forward + strafe - rotate) / denominator;
 
-        leftFrontDrive.setPower(leftFrontPower);
-        rightFrontDrive.setPower(rightFrontPower);
-        leftBackDrive.setPower(leftBackPower);
-        rightBackDrive.setPower(rightBackPower);
+//        leftFrontDrive.setPower(leftFrontPower);
+//        rightFrontDrive.setPower(rightFrontPower);
+//        leftBackDrive.setPower(leftBackPower);
+//        rightBackDrive.setPower(rightBackPower);
+
+
 
     }
 

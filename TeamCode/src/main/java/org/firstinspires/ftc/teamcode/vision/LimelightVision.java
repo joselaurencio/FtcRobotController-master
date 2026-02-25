@@ -61,14 +61,37 @@ public class LimelightVision {
         double ta = getTa();
         if (ta <= 0.0001) return 0.0;
 
+        double distanceWithoutOffsetAdjustment = Math.pow((ta / AREA_SCALE), (1.0 / AREA_EXPONENT));
+        double distanceWithOffsetAdjustment = distanceWithoutOffsetAdjustment + 25.5;
         // x = (ta / scale)^(1 / exponent)
-        return Math.pow((ta / AREA_SCALE), (1.0 / AREA_EXPONENT));
+        return distanceWithOffsetAdjustment;
     }
 
     // =========================
     // DEBUG SUPPORT
     // =========================
+    // =========================
+// APRILTAG ID
+// =========================
 
+    // =========================
+// APRILTAG / OBELISK ID
+// =========================
+
+    public int getObeliskNumber() {
+
+        if (!hasTarget()) return -1;
+
+        if (latest.getFiducialResults() == null ||
+                latest.getFiducialResults().isEmpty()) {
+            return -1;
+        }
+
+        // SimpleList method: take first detected tag
+        return latest.getFiducialResults()
+                .get(0)
+                .getFiducialId();
+    }
     public LLResult getRawResult() {
         return latest;
     }

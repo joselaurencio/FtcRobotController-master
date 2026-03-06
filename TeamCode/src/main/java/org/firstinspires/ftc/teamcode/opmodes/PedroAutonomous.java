@@ -1,160 +1,281 @@
-package org.firstinspires.ftc.teamcode.opmodes;
-import com.qualcomm.robotcore.eventloop.opmode.OpMode;
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.bylazar.configurables.annotations.Configurable;
-import com.bylazar.telemetry.TelemetryManager;
-import com.bylazar.telemetry.PanelsTelemetry;
-import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
-import com.pedropathing.geometry.BezierCurve;
-import com.pedropathing.geometry.BezierLine;
+package org.firstinspires.ftc.teamcode.opmodes; // make sure this aligns with class location
+
+import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
+
 import com.pedropathing.follower.Follower;
-import com.pedropathing.paths.PathChain;
+import com.pedropathing.geometry.BezierLine;
 import com.pedropathing.geometry.Pose;
+import com.pedropathing.paths.Path;
+import com.pedropathing.util.Timer;
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
+import com.qualcomm.robotcore.eventloop.opmode.OpMode;
+import com.qualcomm.robotcore.hardware.CRServo;
+import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
-@Autonomous(name = "Pedro Pathing Autonomous", group = "Autonomous")
-@Configurable // Panels
+import org.firstinspires.ftc.teamcode.math.ShooterModel;
+import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
+import org.firstinspires.ftc.teamcode.vision.LimelightVision;
+
+@Autonomous(name = "Score Auto - Blue Close", group = "Examples")
 public class PedroAutonomous extends OpMode {
-    private TelemetryManager panelsTelemetry; // Panels Telemetry instance
-    public Follower follower; // Pedro Pathing follower instance
-    private int pathState; // Current autonomous path state (state machine)
-    private Paths paths; // Paths defined in the Paths class
 
-    @Override
-    public void init() {
-        panelsTelemetry = PanelsTelemetry.INSTANCE.getTelemetry();
+    // =========================================================================
+    // PedroPathing
+    // =========================================================================
+    private Follower follower;
+    private Timer pathTimer, opmodeTimer;
+    private int pathState;
 
-        follower = Constants.createFollower(hardwareMap);
-        follower.setStartingPose(new Pose(72, 8, Math.toRadians(90)));
+    private final Pose startPose = new Pose(28.5, 128, Math.toRadians(180));
+    private final Pose scorePose = new Pose(60,   85,  Math.toRadians(135));
 
-        paths = new Paths(follower); // Build paths
+    private Path toScore;
 
-        panelsTelemetry.debug("Status", "Initialized");
-        panelsTelemetry.update(telemetry);
+    // =========================================================================
+    // Hardware
+    // =========================================================================
+    private DcMotorEx leftLauncher  = null;
+    private DcMotorEx rightLauncher = null;
+    private CRServo   leftFeeder    = null;
+    private CRServo   rightFeeder   = null;
+
+    private LimelightVision limelight;
+
+    // =========================================================================
+    // Constants
+    // =========================================================================
+    private static final double FEED_TIME_SECONDS = 0.8;
+    private static final double STOP_SPEED        = 0.0;
+    private static final double FULL_SPEED        = 1.0;
+    private static final int    TOTAL_SHOTS       = 3;
+
+    // =========================================================================
+    // Launcher State Machine
+    // =========================================================================
+    private enum LaunchState { IDLE, SPIN_UP, LAUNCH, LAUNCHING }
+    private LaunchState launchState = LaunchState.IDLE;
+
+    private double      launcherTarget = 0;
+    private double      launcherMin    = 0;
+    private int         shotsFired     = 0;
+
+    private ElapsedTime feederTimer = new ElapsedTime();
+
+    // =========================================================================
+    // buildPaths()
+    // =========================================================================
+    private void buildPaths() {
+        toScore = new Path(new BezierLine(startPose, scorePose));
+        toScore.setLinearHeadingInterpolation(startPose.getHeading(), scorePose.getHeading());
     }
 
-    @Override
-    public void loop() {
-        follower.update(); // Update Pedro Pathing
-        pathState = autonomousPathUpdate(); // Update autonomous state machine
+    // =========================================================================
+    // Launcher helpers
+    // =========================================================================
 
-        // Log values to Panels and Driver Station
-        panelsTelemetry.debug("Path State", pathState);
-        panelsTelemetry.debug("X", follower.getPose().getX());
-        panelsTelemetry.debug("Y", follower.getPose().getY());
-        panelsTelemetry.debug("Heading", follower.getPose().getHeading());
-        panelsTelemetry.update(telemetry);
-    }
-
-    public static class Paths {
-        public PathChain Path1;
-        public PathChain Path2;
-        public PathChain Path3;
-        public PathChain Path4;
-        public PathChain Path5;
-
-        public Paths(Follower follower) {
-            Path1 = follower.pathBuilder()
-                    .addPath(
-                            new BezierLine(
-                                    new Pose(121.720, 124.766),
-                                    new Pose(80.625, 87.127)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(40), Math.toRadians(40))
-                    .build();
-
-            Path2 = follower.pathBuilder()
-                    .addPath(
-                            new BezierLine(
-                                    new Pose(80.625, 87.127),
-                                    new Pose(127.313, 83.274)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(40), Math.toRadians(0))
-                    .build();
-
-            Path3 = follower.pathBuilder()
-                    .addPath(
-                            new BezierLine(
-                                    new Pose(127.313, 83.274),
-                                    new Pose(81.117, 87.316)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(40))
-                    .build();
-
-            Path4 = follower.pathBuilder()
-                    .addPath(
-                            new BezierCurve(
-                                    new Pose(81.117, 87.316),
-                                    new Pose(82.314, 55.256),
-                                    new Pose(127.577, 58.264)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(40), Math.toRadians(0))
-                    .build();
-
-            Path5 = follower.pathBuilder()
-                    .addPath(
-                            new BezierLine(
-                                    new Pose(127.577, 58.264),
-                                    new Pose(81.560, 87.107)
-                            )
-                    )
-                    .setLinearHeadingInterpolation(Math.toRadians(0), Math.toRadians(40))
-                    .build();
+    /** Call once to kick off a single shot cycle. */
+    private void requestShot() {
+        if (launchState == LaunchState.IDLE) {
+            launchState = LaunchState.SPIN_UP;
         }
     }
 
-    public int autonomousPathUpdate() {
-        // Add your state machine Here
-        // Access paths with paths.pathName
-        // Refer to the Pedro Pathing Docs (Auto Example) for an example state machine
+    /** Returns true when the launcher FSM is back to IDLE (shot complete). */
+    private boolean launcherIdle() {
+        return launchState == LaunchState.IDLE;
+    }
+
+    private void stopLaunchers() {
+        leftLauncher.setVelocity(0);
+        rightLauncher.setVelocity(0);
+    }
+
+    /**
+     * Must be called every loop tick.
+     * Handles spin-up → feed → stop for a single shot, then returns to IDLE.
+     * Fires BOTH feeders simultaneously (left and right launchers shoot together).
+     */
+    private void updateLauncher() {
+        switch (launchState) {
+            case IDLE:
+                break;
+
+            case SPIN_UP:
+                leftLauncher.setVelocity(launcherTarget);
+                rightLauncher.setVelocity(launcherTarget);
+                // Advance once BOTH launchers are up to speed
+                if (leftLauncher.getVelocity()  > launcherMin
+                        && rightLauncher.getVelocity() > launcherMin) {
+                    launchState = LaunchState.LAUNCH;
+                }
+                break;
+
+            case LAUNCH:
+                leftFeeder.setPower(FULL_SPEED);
+                rightFeeder.setPower(FULL_SPEED);
+                feederTimer.reset();
+                launchState = LaunchState.LAUNCHING;
+                break;
+
+            case LAUNCHING:
+                if (feederTimer.seconds() > FEED_TIME_SECONDS) {
+                    leftFeeder.setPower(STOP_SPEED);
+                    rightFeeder.setPower(STOP_SPEED);
+                    shotsFired++;
+                    launchState = LaunchState.IDLE;
+                }
+                break;
+        }
+    }
+
+    // =========================================================================
+    // Path FSM
+    //
+    //  State map:
+    //   0  → Drive to scoring position
+    //   1  → Wait to arrive → update limelight, set RPM from distance
+    //   2  → Fire shot; wait for it to finish; repeat until 3 shots done
+    //   3  → Stop launchers — DONE
+    // =========================================================================
+    private void autonomousPathUpdate() {
+        updateLauncher(); // runs every tick
+
         switch (pathState) {
+
             case 0:
-                // Start the first path
-                follower.followPath(paths.Path1);
-                pathState = 1;
+                // Begin driving to the scoring position
+                follower.followPath(toScore);
+                setPathState(1);
                 break;
 
             case 1:
-                // Check if the follower is finished with Path1
+                // Wait to arrive, keep polling limelight so RPM is ready
+                limelight.update();
                 if (!follower.isBusy()) {
-                    follower.followPath(paths.Path2);
-                    pathState = 2;
+                    // Grab distance from AprilTag and convert to launcher velocity
+                    if (limelight.hasTarget()) {
+                        double distanceCm     = limelight.getDistanceFromArea();
+                        double rpm            = ShooterModel.distanceToRPM(distanceCm);
+                        launcherTarget        = rpm * 28.0 / 60.0;
+                        launcherMin           = launcherTarget * 0.95;
+                    }
+                    // Advance to shooting even if no tag yet — target will use last known value
+                    setPathState(2);
                 }
                 break;
 
             case 2:
-                // Check if finished with Path2
-                if (!follower.isBusy()) {
-                    follower.followPath(paths.Path3);
-                    pathState = 3;
+                // Keep limelight fresh in case we want to update between shots
+                limelight.update();
+                if (limelight.hasTarget()) {
+                    double distanceCm  = limelight.getDistanceFromArea();
+                    double rpm         = ShooterModel.distanceToRPM(distanceCm);
+                    launcherTarget     = rpm * 28.0 / 60.0;
+                    launcherMin        = launcherTarget * 0.95;
                 }
-                break;
-            case 3:
-                // Check if finished with Path3
-                if (!follower.isBusy()) {
-                    follower.followPath(paths.Path4);
-                    pathState = 4;
-                }
-                break;
-            // Continue for paths 4 and 5...
-            case 4:
-                // Check if finished with Path3
-                if (!follower.isBusy()) {
-                    follower.followPath(paths.Path5);
-                    pathState = 5;
+
+                if (shotsFired < TOTAL_SHOTS) {
+                    // Queue next shot whenever the launcher is idle
+                    requestShot();
+                } else {
+                    // All 3 shots done
+                    setPathState(3);
                 }
                 break;
 
-            case 5:
-                if (!follower.isBusy()) {
-                    // Done!
-                    pathState = -1;
-                }
+            case 3:
+                stopLaunchers();
+                setPathState(-1); // DONE
                 break;
+
+            default:
+                break; // -1: finished, do nothing
         }
-        return pathState;
+    }
+
+    private void setPathState(int pState) {
+        pathState = pState;
+        pathTimer.resetTimer();
+    }
+
+    // =========================================================================
+    // OpMode Lifecycle
+    // =========================================================================
+
+    @Override
+    public void init() {
+        pathTimer   = new Timer();
+        opmodeTimer = new Timer();
+
+        follower      = Constants.createFollower(hardwareMap);
+        leftLauncher  = hardwareMap.get(DcMotorEx.class, "left_launcher");
+        rightLauncher = hardwareMap.get(DcMotorEx.class, "right_launcher");
+        leftFeeder    = hardwareMap.get(CRServo.class,   "left_feeder");
+        rightFeeder   = hardwareMap.get(CRServo.class,   "right_feeder");
+        limelight     = new LimelightVision(hardwareMap);
+
+        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+        leftFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightFeeder.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        leftLauncher.setZeroPowerBehavior(BRAKE);
+        rightLauncher.setZeroPowerBehavior(BRAKE);
+        leftLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(300, 0, 0, 10));
+        rightLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(300, 0, 0, 10));
+
+        leftFeeder.setPower(STOP_SPEED);
+        rightFeeder.setPower(STOP_SPEED);
+
+        buildPaths();
+        follower.setStartingPose(startPose);
+
+        telemetry.addData("Status", "Initialized");
+    }
+
+    @Override
+    public void init_loop() {}
+
+    @Override
+    public void start() {
+        opmodeTimer.resetTimer();
+        setPathState(0);
+    }
+
+    @Override
+    public void loop() {
+        follower.update();
+        autonomousPathUpdate();
+
+        final double leftRPM  = leftLauncher.getVelocity()  * 60.0 / 28.0;
+        final double rightRPM = rightLauncher.getVelocity() * 60.0 / 28.0;
+
+        telemetry.addData("Path State",       pathState);
+        telemetry.addData("Launch State",     launchState);
+        telemetry.addData("Shots Fired",      shotsFired + " / " + TOTAL_SHOTS);
+        telemetry.addData("Target RPM",       launcherTarget * 60.0 / 28.0);
+        telemetry.addData("Left RPM",         leftRPM);
+        telemetry.addData("Right RPM",        rightRPM);
+        telemetry.addData("Has AprilTag",     limelight.hasTarget());
+        if (limelight.hasTarget()) {
+            telemetry.addData("Distance (cm)", limelight.getDistanceFromArea());
+        }
+        telemetry.addData("Opmode Time (s)",  opmodeTimer.getElapsedTimeSeconds());
+        telemetry.update();
+    }
+
+    @Override
+    public void stop() {
+        stopLaunchers();
+        leftFeeder.setPower(STOP_SPEED);
+        rightFeeder.setPower(STOP_SPEED);
     }
 }

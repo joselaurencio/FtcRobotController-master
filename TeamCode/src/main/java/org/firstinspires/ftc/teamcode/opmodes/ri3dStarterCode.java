@@ -231,9 +231,9 @@ public class ri3dStarterCode extends OpMode {
         }
         lastBack = gamepad1.back;
 
-        double forward = gamepad2.right_stick_x;
+        double forward = gamepad2.left_stick_y;
         double strafe = -gamepad2.left_stick_x;
-        double rotate = gamepad2.left_stick_y;
+        double rotate = -gamepad2.right_stick_x;
 
 // ===== AUTO ALIGN BUTTON =====
         boolean autoAlignActive = gamepad1.right_trigger > 0.5;
@@ -382,10 +382,10 @@ public class ri3dStarterCode extends OpMode {
         leftBackPower = (forward - strafe + rotate) / denominator;
         rightBackPower = (forward + strafe - rotate) / denominator;
 
-//        leftFrontDrive.setPower(leftFrontPower);
-//        rightFrontDrive.setPower(rightFrontPower);
-//        leftBackDrive.setPower(leftBackPower);
-//        rightBackDrive.setPower(rightBackPower);
+        leftFrontDrive.setPower(leftFrontPower);
+        rightFrontDrive.setPower(rightFrontPower);
+        leftBackDrive.setPower(leftBackPower);
+        rightBackDrive.setPower(rightBackPower);
 
 
 

@@ -20,8 +20,8 @@ import org.firstinspires.ftc.teamcode.math.ShooterModel;
 import org.firstinspires.ftc.teamcode.pedroPathing.Constants;
 import org.firstinspires.ftc.teamcode.vision.LimelightVision;
 
-@Autonomous(name = "Score Auto - Blue Close", group = "Examples")
-public class PedroAutonomous extends OpMode {
+@Autonomous(name = "Score Auto - Red Close", group = "Examples")
+public class PedroAutonomousRC extends OpMode {
 
     // =========================================================================
     // PedroPathing

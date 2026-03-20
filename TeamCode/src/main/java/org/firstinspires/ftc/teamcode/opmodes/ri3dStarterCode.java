@@ -29,7 +29,7 @@ public class ri3dStarterCode extends OpMode {
     private final double HEADING_DEADBAND = 1.0; // degrees
     private final double MAX_ROTATE_POWER = 0.6; // safety clamp
     // ================================================
-    final double FEED_TIME_SECONDS = .8; //The feeder servos run this long when a shot is requested.
+    final double FEED_TIME_SECONDS = 5; //The feeder servos run this long when a shot is requested.
     final double STOP_SPEED = 0.0; //We send this power to the servos when we want them to stop.
     final double FULL_SPEED = 1.0;
 
@@ -214,8 +214,8 @@ public class ri3dStarterCode extends OpMode {
             double distanceCm = limelight.getDistanceFromArea();
             double distanceMeters = distanceCm / 100.0;
 
-            double rpm = ShooterModel.distanceToRPM(distanceCm);
-
+//            double rpm = ShooterModel.distanceToRPM(distanceCm);
+            double rpm = 3200;  //test rpm
             double ticksPerSecond = rpm * 28.0 / 60.0;
 
             launcherTarget = ticksPerSecond;
@@ -329,8 +329,8 @@ public class ri3dStarterCode extends OpMode {
         /*
          * Now we call our "Launch" function.
          */
-        launchLeft(gamepad1.leftBumperWasPressed());
-        launchRight(gamepad1.rightBumperWasPressed());
+        launchLeft(gamepad1.rightBumperWasPressed());
+        launchRight(gamepad1.leftBumperWasPressed());
 
         /*
          * Show the state and motor powers

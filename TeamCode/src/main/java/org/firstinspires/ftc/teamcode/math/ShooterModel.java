@@ -21,9 +21,8 @@ public class ShooterModel {
         // d is in CENTIMETERS
 
         if (USE_LINEAR_MODEL) {
-
-            // Inverted regression model
-            double rpm = (d + 202.30135) / 0.164768;
+            // Linear regression: RPM = 3.67626 * distance + 1746.15732
+            double rpm = 3.67626 * d + 1746.15732;
 
             return Math.max(rpm, 0);
         }

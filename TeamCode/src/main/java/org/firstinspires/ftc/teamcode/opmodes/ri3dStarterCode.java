@@ -72,6 +72,7 @@ public class ri3dStarterCode extends OpMode {
 
     private enum LaunchState {
         IDLE,
+        ALIGN,   //new
         SPIN_UP,
         LAUNCH,
         LAUNCHING,
@@ -215,7 +216,7 @@ public class ri3dStarterCode extends OpMode {
             double distanceMeters = distanceCm / 100.0;
 
 //            double rpm = ShooterModel.distanceToRPM(distanceCm);
-            double rpm = 3200;  //test rpm
+            double rpm = 3300;  //test rpm
             double ticksPerSecond = rpm * 28.0 / 60.0;
 
             launcherTarget = ticksPerSecond;
@@ -237,6 +238,7 @@ public class ri3dStarterCode extends OpMode {
 
 // ===== AUTO ALIGN BUTTON =====
         boolean autoAlignActive = gamepad1.right_trigger > 0.5;
+
 
         if (autoAlignActive && limelight.hasTarget()) {
 
@@ -310,6 +312,7 @@ public class ri3dStarterCode extends OpMode {
                     break;
             }
         }
+
 
         if (gamepad1.dpadUpWasPressed()) {
             switch (launcherDistance) {
@@ -393,27 +396,58 @@ public class ri3dStarterCode extends OpMode {
 
     void launchLeft(boolean shotRequested) {
         switch (leftLaunchState) {
+
             case IDLE:
-                if (shotRequested) {
+                if (shotRequested && limelight.hasTarget()) {
+                    leftLaunchState = LaunchState.ALIGN; // ===== NEW =====
+                }
+                break;
+
+            // ===== NEW =====
+            case ALIGN:
+
+                double tx = limelight.getTx();
+
+                if (!limelight.hasTarget()) {
+                    mecanumDrive(0,0,0);
+                    leftLaunchState = LaunchState.IDLE;
+                    break;
+                }
+
+                // Smooth proportional alignment
+                double error = tx + 1; // target = -1
+                double power = -error * 0.02;
+
+                // clamp
+                power = Math.max(-0.4, Math.min(0.4, power));
+
+                mecanumDrive(0, 0, power);
+
+                if (isAligned()) {
+                    mecanumDrive(0,0,0);
                     leftLaunchState = LaunchState.SPIN_UP;
                 }
                 break;
+
             case SPIN_UP:
                 leftLauncher.setVelocity(launcherTarget);
                 rightLauncher.setVelocity(launcherTarget);
+
                 if (leftLauncher.getVelocity() > launcherMin) {
                     leftLaunchState = LaunchState.LAUNCH;
                 }
                 break;
+
             case LAUNCH:
                 leftFeeder.setPower(FULL_SPEED);
                 leftFeederTimer.reset();
                 leftLaunchState = LaunchState.LAUNCHING;
                 break;
+
             case LAUNCHING:
                 if (leftFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    leftLaunchState = LaunchState.IDLE;
                     leftFeeder.setPower(STOP_SPEED);
+                    leftLaunchState = LaunchState.IDLE;
                 }
                 break;
         }
@@ -421,29 +455,64 @@ public class ri3dStarterCode extends OpMode {
 
     void launchRight(boolean shotRequested) {
         switch (rightLaunchState) {
+
             case IDLE:
-                if (shotRequested) {
+                if (shotRequested && limelight.hasTarget()) {
+                    rightLaunchState = LaunchState.ALIGN; // ===== NEW =====
+                }
+                break;
+
+            // ===== NEW =====
+            case ALIGN:
+
+                double tx = limelight.getTx();
+
+                if (!limelight.hasTarget()) {
+                    mecanumDrive(0,0,0);
+                    rightLaunchState = LaunchState.IDLE;
+                    break;
+                }
+
+                double error = tx + 1; // target = -1
+                double power = error * 0.02;
+
+                power = Math.max(-0.4, Math.min(0.4, power));
+
+                mecanumDrive(0, 0, power);
+
+                if (isAligned()) {
+                    mecanumDrive(0,0,0);
                     rightLaunchState = LaunchState.SPIN_UP;
                 }
                 break;
+
             case SPIN_UP:
                 leftLauncher.setVelocity(launcherTarget);
                 rightLauncher.setVelocity(launcherTarget);
+
                 if (rightLauncher.getVelocity() > launcherMin) {
                     rightLaunchState = LaunchState.LAUNCH;
                 }
                 break;
+
             case LAUNCH:
                 rightFeeder.setPower(FULL_SPEED);
                 rightFeederTimer.reset();
                 rightLaunchState = LaunchState.LAUNCHING;
                 break;
+
             case LAUNCHING:
                 if (rightFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    rightLaunchState = LaunchState.IDLE;
                     rightFeeder.setPower(STOP_SPEED);
+                    rightLaunchState = LaunchState.IDLE;
                 }
                 break;
         }
+    }
+    // ===== NEW METHOD (MUST BE INSIDE CLASS, NOT INSIDE LOOP) =====
+    public boolean isAligned() {
+        return limelight != null &&
+                limelight.hasTarget() &&
+                Math.abs(limelight.getTx() + 1) < 0.5;
     }
 }

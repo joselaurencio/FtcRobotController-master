@@ -26,8 +26,8 @@ public class ri3dStarterCode extends OpMode {
     private double kD_align = 0.003;
     private double previousAlignError = 0; // used for derivative term in both shooters
 
-    private final double ALIGN_DEADBAND  = 0.5;  // degrees — ignore error smaller than this
-    private final double MAX_ALIGN_POWER = 0.4;  // clamp rotation to prevent overshoot
+    private final double ALIGN_DEADBAND  = 0.2;  // degrees — ignore error smaller than this
+    private final double MAX_ALIGN_POWER = 0.7;  // clamp rotation to prevent overshoot
     // ==================================================
 
     // ================= DYNAMIC OFFSET TUNING =================

@@ -22,7 +22,7 @@ public class ri3dStarterCode extends OpMode {
     // ================= AUTO ALIGN PD =================
     // kP_align: proportional gain — tune this first. Increase until robot snaps to target.
     // kD_align: derivative gain  — tune second. Increase to damp oscillation near target.
-    private double kP_align = 0.02;
+    private double kP_align = .08;
     private double kD_align = 0.003;
     private double previousAlignError = 0; // used for derivative term in both shooters
 
@@ -36,12 +36,12 @@ public class ri3dStarterCode extends OpMode {
     // SHOOTER_OFFSET:   geometry compensation — left shooter aims left, right aims right
     //
     // To replace with a lookup table later, change getTargetOffset() only.
-    private final double BASE_OFFSET     = -1.0;   // degrees
+    private final double BASE_OFFSET     = -3.0;   // degrees
     private final double DISTANCE_FACTOR =  0.002; // degrees per cm
-    private final double SHOOTER_OFFSET  =  0.8;   // degrees, applied ± per shooter side
+    private final double SHOOTER_OFFSET  =  .1;   // degrees, applied ± per shooter side
     // =========================================================
 
-    final double FEED_TIME_SECONDS = 5;   // feeder servos run this long per shot
+    final double FEED_TIME_SECONDS = 1.5;   // feeder servos run this long per shot
     final double STOP_SPEED        = 0.0;
     final double FULL_SPEED        = 1.0;
 
@@ -184,7 +184,7 @@ public class ri3dStarterCode extends OpMode {
         // ===== Vision Mode: continuously update launcher velocity target =====
         if (shooterMode == ShooterMode.VISION && limelight.hasTarget()) {
             double distanceCm     = limelight.getDistanceFromArea();
-            double rpm            = 3300; // replace with ShooterModel.distanceToRPM(distanceCm) when ready
+            double rpm            = ShooterModel.distanceToRPM(distanceCm); // replace with ShooterModel.distanceToRPM(distanceCm) when ready
             double ticksPerSecond = rpm * 28.0 / 60.0;
             launcherTarget = ticksPerSecond;
             launcherMin    = ticksPerSecond * 0.95;

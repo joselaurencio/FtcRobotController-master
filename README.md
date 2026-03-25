@@ -2,7 +2,7 @@
 
 Welcome to our team's official repository for the **FIRST Tech Challenge: DECODE** 2025-2026 competition season. This repository contains the source code for our robot controller, featuring advanced pathing, vision processing, and modular subsystem design.
 
-## 🤖 Our Codebase
+## Our Codebase
 
 Our code is organized into modular subsystems and mathematical models to ensure reliability and ease of tuning.
 
@@ -19,7 +19,7 @@ Our code is organized into modular subsystems and mathematical models to ensure 
 *   **Dual-Flywheel Shooter:** Powered by high-speed motors (`left_launcher`, `right_launcher`) and fed by continuous rotation servos (`left_feeder`, `right_feeder`).
 *   **Vision-Assisted Aiming:** Real-time distance estimation based on Limelight target area, feeding directly into our shooter's power model.
 
-## 🏎️ OpModes
+## OpModes
 
 ### Autonomous
 Our autonomous programs utilize **Pedro Pathing** for consistent and repeatable scoring.
@@ -30,13 +30,13 @@ Our autonomous programs utilize **Pedro Pathing** for consistent and repeatable 
 *   **Aim + Shoot TeleOp:** A vision-centric drive mode where the robot automatically aligns to targets and calculates optimal shooter RPM based on distance.
 *   **ManualAndVisionTeleOp:** Full control for the driver with optional vision assistance for crucial scoring moments.
 
-## 🛠️ Development & Tuning
+## Development & Tuning
 
 We use several specialized modes for robot calibration:
 *   **CalibrationMode:** Used for gathering data points for our distance-to-area and distance-to-RPM models.
 *   **Pedro Pathing Tuning:** Full suite of tuning OpModes (Lateral, Heading, Drive, etc.) for maximizing our follower's accuracy.
 
-## 📚 Resources & Credits
+## Resources & Credits
 
 This project is built on the [FTC SDK](https://github.com/FIRST-Tech-Challenge/FtcRobotController). 
 Special thanks to the authors of the following libraries:

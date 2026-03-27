@@ -118,8 +118,8 @@ Note: Some names start with "Team" and others start with "team".  This is intent
 
 2)  In the new Team0417 folder, delete the TeamCode.iml file.
 
-3)  the new Team0417 folder, rename the "src/main/java/org/firstinspires/ftc/teamcode" folder
-    to a matching name with a lowercase 'team' eg:  "team0417".
+   3)  the new Team0417 folder, rename the "src/main/java/org/firstinspires/ftc/teamcode" folder
+       to a matching name with a lowercase 'team' eg:  "team0417".
 
 4)  In the new Team0417/src/main folder, edit the "AndroidManifest.xml" file, change the line that contains
     package="org.firstinspires.ftc.teamcode"

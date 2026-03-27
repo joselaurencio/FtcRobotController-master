@@ -133,13 +133,13 @@ public class ri3dStarterCode extends OpMode {
 
         limelight = new LimelightVision(hardwareMap);
 
-        leftFrontDrive.setDirection(DcMotor.Direction.FORWARD);
+        leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
         rightFrontDrive.setDirection(DcMotor.Direction.REVERSE);
         leftBackDrive.setDirection(DcMotor.Direction.FORWARD);
-        rightBackDrive.setDirection(DcMotor.Direction.REVERSE);
+        rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
 
         leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-        rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+        rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
 
         intake.setDirection(DcMotorSimple.Direction.REVERSE);
 
@@ -161,7 +161,7 @@ public class ri3dStarterCode extends OpMode {
         rightLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
                 new PIDFCoefficients(300, 0, 0, 10));
 
-        rightFeeder.setDirection(DcMotorSimple.Direction.REVERSE);
+        rightFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
         leftFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
 
         telemetry.addData("Status", "Initialized");

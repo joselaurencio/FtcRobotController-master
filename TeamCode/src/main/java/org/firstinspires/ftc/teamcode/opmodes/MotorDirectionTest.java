@@ -12,14 +12,14 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
  *
  *  PURPOSE:
  *    Tells you exactly which motors need to be REVERSED and
- *    whether the intake direction is correct — without needing
- *    to look at the robot while it's running.
+ *    whether the intake and shooter directions are correct —
+ *    without needing to look at the robot while it's running.
  *
  *  HOW TO USE:
  *    1. Put the robot on the ground with WHEELS FREE TO SPIN.
  *    2. Run this OpMode.
  *    3. Follow the on-screen instructions on the Driver Hub.
- *    4. Press each button, watch the wheel/intake, answer Y/N.
+ *    4. Press each button, watch the wheel/intake/shooter, answer Y/N.
  *    5. Read the final VERDICT on the telemetry screen.
  *
  *  CONTROLS:
@@ -34,6 +34,12 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
  *      RIGHT TRIGGER → Test RIGHT BACK  drive motor
  *      A             → Test INTAKE (should pull IN)
  *      B             → Test INTAKE reverse (should push OUT)
+ *
+ *    Gamepad 2:
+ *      LEFT  BUMPER  → Test LEFT  LAUNCHER (should spin outward/upward)
+ *      RIGHT BUMPER  → Test RIGHT LAUNCHER (should spin outward/upward)
+ *
+ *    Gamepad 1:
  *      Y             → Show FINAL VERDICT / recommended fixes
  *      BACK          → Reset all results
  *
@@ -54,25 +60,34 @@ public class MotorDirectionTest extends OpMode {
     private DcMotor leftBackDrive;
     private DcMotor rightBackDrive;
     private DcMotor intake;
+    private DcMotor leftLauncher;
+    private DcMotor rightLauncher;
 
     // ===== Test power — low enough to be safe, high enough to see clearly =====
-    private static final double TEST_POWER    = 0.35;
+    private static final double TEST_POWER        = 0.35;
     private static final double TRIGGER_THRESHOLD = 0.5;
 
     // ===== Test result states =====
     private enum Result { NOT_TESTED, CORRECT, NEEDS_REVERSE }
 
-    private Result leftFrontResult  = Result.NOT_TESTED;
-    private Result rightFrontResult = Result.NOT_TESTED;
-    private Result leftBackResult   = Result.NOT_TESTED;
-    private Result rightBackResult  = Result.NOT_TESTED;
-    private Result intakeResult     = Result.NOT_TESTED;
+    private Result leftFrontResult   = Result.NOT_TESTED;
+    private Result rightFrontResult  = Result.NOT_TESTED;
+    private Result leftBackResult    = Result.NOT_TESTED;
+    private Result rightBackResult   = Result.NOT_TESTED;
+    private Result intakeResult      = Result.NOT_TESTED;
+    private Result leftLauncherResult  = Result.NOT_TESTED;
+    private Result rightLauncherResult = Result.NOT_TESTED;
 
     // ===== Which motor is currently being tested =====
-    private enum ActiveTest { NONE, LEFT_FRONT, RIGHT_FRONT, LEFT_BACK, RIGHT_BACK, INTAKE_IN, INTAKE_OUT }
+    private enum ActiveTest {
+        NONE,
+        LEFT_FRONT, RIGHT_FRONT, LEFT_BACK, RIGHT_BACK,
+        INTAKE_IN, INTAKE_OUT,
+        LEFT_LAUNCHER, RIGHT_LAUNCHER
+    }
     private ActiveTest activeTest = ActiveTest.NONE;
 
-    // ===== Button edge detection =====
+    // ===== Button edge detection — Gamepad 1 =====
     private boolean lastLB    = false;
     private boolean lastRB    = false;
     private boolean lastA     = false;
@@ -82,12 +97,19 @@ public class MotorDirectionTest extends OpMode {
     private boolean lastLT    = false;
     private boolean lastRT    = false;
 
+    // ===== Button edge detection — Gamepad 2 =====
+    private boolean lastGP2LB = false;
+    private boolean lastGP2RB = false;
+
     // ===== Show verdict screen =====
     private boolean showVerdict = false;
 
     // ===== Timer to auto-stop motor after short burst =====
     private long testStartTime = 0;
     private static final long TEST_DURATION_MS = 1200; // run each motor for 1.2 seconds
+
+    // ===== Confirmation guard =====
+    private boolean awaitingConfirm = false;
 
     // =========================================================
     // INIT
@@ -99,6 +121,8 @@ public class MotorDirectionTest extends OpMode {
         leftBackDrive   = hardwareMap.get(DcMotor.class, "left_back_drive");
         rightBackDrive  = hardwareMap.get(DcMotor.class, "right_back_drive");
         intake          = hardwareMap.get(DcMotor.class, "intake");
+        leftLauncher    = hardwareMap.get(DcMotor.class, "left_launcher");
+        rightLauncher   = hardwareMap.get(DcMotor.class, "right_launcher");
 
         // Set all directions to FORWARD so we're testing raw wiring, not code offsets.
         // This way the test tells you exactly what to put in your main code.
@@ -107,6 +131,8 @@ public class MotorDirectionTest extends OpMode {
         leftBackDrive.setDirection(DcMotorSimple.Direction.FORWARD);
         rightBackDrive.setDirection(DcMotorSimple.Direction.FORWARD);
         intake.setDirection(DcMotorSimple.Direction.FORWARD);
+        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
 
         leftFrontDrive.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         rightFrontDrive.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
@@ -125,6 +151,7 @@ public class MotorDirectionTest extends OpMode {
     @Override
     public void loop() {
 
+        // ── Gamepad 1 reads ──
         boolean lb   = gamepad1.left_bumper;
         boolean rb   = gamepad1.right_bumper;
         boolean lt   = gamepad1.left_trigger  > TRIGGER_THRESHOLD;
@@ -134,59 +161,46 @@ public class MotorDirectionTest extends OpMode {
         boolean y    = gamepad1.y;
         boolean back = gamepad1.back;
 
-        // ===== BUTTON PRESS DETECTION =====
+        // ── Gamepad 2 reads ──
+        boolean gp2lb = gamepad2.left_bumper;
+        boolean gp2rb = gamepad2.right_bumper;
 
-        // LEFT FRONT — left bumper
-        if (lb && !lastLB) {
-            startTest(ActiveTest.LEFT_FRONT);
-        }
+        // ===== BUTTON PRESS DETECTION — DRIVE =====
 
-        // RIGHT FRONT — right bumper
-        if (rb && !lastRB) {
-            startTest(ActiveTest.RIGHT_FRONT);
-        }
+        if (lb && !lastLB)  startTest(ActiveTest.LEFT_FRONT);
+        if (rb && !lastRB)  startTest(ActiveTest.RIGHT_FRONT);
+        if (lt && !lastLT)  startTest(ActiveTest.LEFT_BACK);
+        if (rt && !lastRT)  startTest(ActiveTest.RIGHT_BACK);
 
-        // LEFT BACK — left trigger
-        if (lt && !lastLT) {
-            startTest(ActiveTest.LEFT_BACK);
-        }
+        // ===== INTAKE =====
+        if (a && !lastA)    startTest(ActiveTest.INTAKE_IN);
+        if (b && !lastB)    startTest(ActiveTest.INTAKE_OUT);
 
-        // RIGHT BACK — right trigger
-        if (rt && !lastRT) {
-            startTest(ActiveTest.RIGHT_BACK);
-        }
+        // ===== LAUNCHERS — Gamepad 2 =====
+        if (gp2lb && !lastGP2LB) startTest(ActiveTest.LEFT_LAUNCHER);
+        if (gp2rb && !lastGP2RB) startTest(ActiveTest.RIGHT_LAUNCHER);
 
-        // INTAKE IN — A
-        if (a && !lastA) {
-            startTest(ActiveTest.INTAKE_IN);
-        }
-
-        // INTAKE OUT — B
-        if (b && !lastB) {
-            startTest(ActiveTest.INTAKE_OUT);
-        }
-
-        // SHOW VERDICT — Y
+        // ===== VERDICT / RESET =====
         if (y && !lastY) {
             stopAllMotors();
             activeTest  = ActiveTest.NONE;
             showVerdict = !showVerdict;
         }
-
-
-        // RESET — BACK
         if (back && !lastBack) {
             resetAll();
         }
 
-        lastLB   = lb;
-        lastRB   = rb;
-        lastLT   = lt;
-        lastRT   = rt;
-        lastA    = a;
-        lastB    = b;
-        lastY    = y;
-        lastBack = back;
+        // ── Save previous states ──
+        lastLB    = lb;
+        lastRB    = rb;
+        lastLT    = lt;
+        lastRT    = rt;
+        lastA     = a;
+        lastB     = b;
+        lastY     = y;
+        lastBack  = back;
+        lastGP2LB = gp2lb;
+        lastGP2RB = gp2rb;
 
         // ===== RUN ACTIVE TEST =====
         runActiveTest();
@@ -206,46 +220,34 @@ public class MotorDirectionTest extends OpMode {
     // =========================================================
     private void startTest(ActiveTest test) {
         stopAllMotors();
-        activeTest    = test;
-        showVerdict   = false;
-        testStartTime = System.currentTimeMillis();
+        activeTest      = test;
+        showVerdict     = false;
+        awaitingConfirm = false;
+        testStartTime   = System.currentTimeMillis();
     }
 
     // =========================================================
     // RUN ACTIVE TEST — applies power and auto-stops after duration
     // =========================================================
     private void runActiveTest() {
-        long elapsed = System.currentTimeMillis() - testStartTime;
-
         if (activeTest == ActiveTest.NONE) return;
 
+        long elapsed = System.currentTimeMillis() - testStartTime;
+
         if (elapsed > TEST_DURATION_MS) {
-            // Auto-stop and record result as pending user confirmation
             stopAllMotors();
-            // Don't reset activeTest — keep it so telemetry shows what was just tested
-            return;
+            return; // keep activeTest set so telemetry can ask for confirmation
         }
 
-        // Apply power to the one motor being tested
         switch (activeTest) {
-            case LEFT_FRONT:
-                leftFrontDrive.setPower(TEST_POWER);
-                break;
-            case RIGHT_FRONT:
-                rightFrontDrive.setPower(TEST_POWER);
-                break;
-            case LEFT_BACK:
-                leftBackDrive.setPower(TEST_POWER);
-                break;
-            case RIGHT_BACK:
-                rightBackDrive.setPower(TEST_POWER);
-                break;
-            case INTAKE_IN:
-                intake.setPower(TEST_POWER);
-                break;
-            case INTAKE_OUT:
-                intake.setPower(-TEST_POWER);
-                break;
+            case LEFT_FRONT:    leftFrontDrive.setPower(TEST_POWER);   break;
+            case RIGHT_FRONT:   rightFrontDrive.setPower(TEST_POWER);  break;
+            case LEFT_BACK:     leftBackDrive.setPower(TEST_POWER);    break;
+            case RIGHT_BACK:    rightBackDrive.setPower(TEST_POWER);   break;
+            case INTAKE_IN:     intake.setPower(TEST_POWER);           break;
+            case INTAKE_OUT:    intake.setPower(-TEST_POWER);          break;
+            case LEFT_LAUNCHER: leftLauncher.setPower(TEST_POWER);     break;
+            case RIGHT_LAUNCHER:rightLauncher.setPower(TEST_POWER);    break;
         }
     }
 
@@ -254,7 +256,7 @@ public class MotorDirectionTest extends OpMode {
     // =========================================================
     private void displayTestScreen() {
 
-        long elapsed = System.currentTimeMillis() - testStartTime;
+        long elapsed     = System.currentTimeMillis() - testStartTime;
         boolean motorRunning = (activeTest != ActiveTest.NONE) && (elapsed <= TEST_DURATION_MS);
 
         telemetry.addLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -262,7 +264,6 @@ public class MotorDirectionTest extends OpMode {
         telemetry.addLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         telemetry.addLine("");
 
-        // ── Active test prompt ──
         if (motorRunning) {
             telemetry.addLine(">>> MOTOR RUNNING — WATCH IT <<<");
             switch (activeTest) {
@@ -296,38 +297,37 @@ public class MotorDirectionTest extends OpMode {
                     telemetry.addLine("Expected: rollers push OUTWARD");
                     telemetry.addLine("(game elements pushed OUT of robot)");
                     break;
-            }
-            telemetry.addLine("");
-        } else if (activeTest != ActiveTest.NONE) {
-            // Motor just stopped — ask for confirmation
-            telemetry.addLine(">>> DID IT SPIN CORRECTLY? <<<");
-            switch (activeTest) {
-                case LEFT_FRONT:
-                    telemetry.addLine("LEFT FRONT — did wheel spin FORWARD?");
+                case LEFT_LAUNCHER:
+                    telemetry.addLine("Testing: LEFT LAUNCHER");
+                    telemetry.addLine("Expected: flywheel spins OUTWARD");
+                    telemetry.addLine("(top of wheel moves away from center)");
                     break;
-                case RIGHT_FRONT:
-                    telemetry.addLine("RIGHT FRONT — did wheel spin FORWARD?");
-                    break;
-                case LEFT_BACK:
-                    telemetry.addLine("LEFT BACK — did wheel spin FORWARD?");
-                    break;
-                case RIGHT_BACK:
-                    telemetry.addLine("RIGHT BACK — did wheel spin FORWARD?");
-                    break;
-                case INTAKE_IN:
-                    telemetry.addLine("INTAKE IN — did it pull inward?");
-                    break;
-                case INTAKE_OUT:
-                    telemetry.addLine("INTAKE OUT — did it push outward?");
+                case RIGHT_LAUNCHER:
+                    telemetry.addLine("Testing: RIGHT LAUNCHER");
+                    telemetry.addLine("Expected: flywheel spins OUTWARD");
+                    telemetry.addLine("(top of wheel moves away from center)");
                     break;
             }
-            telemetry.addLine("");
-            telemetry.addLine("  Press A = YES (correct)");
-            telemetry.addLine("  Press B = NO  (wrong direction)");
             telemetry.addLine("");
 
-            // Listen for YES/NO on the confirmation screen
+        } else if (activeTest != ActiveTest.NONE) {
+            telemetry.addLine(">>> DID IT SPIN CORRECTLY? <<<");
+            switch (activeTest) {
+                case LEFT_FRONT:     telemetry.addLine("LEFT FRONT — did wheel spin FORWARD?");          break;
+                case RIGHT_FRONT:    telemetry.addLine("RIGHT FRONT — did wheel spin FORWARD?");         break;
+                case LEFT_BACK:      telemetry.addLine("LEFT BACK — did wheel spin FORWARD?");           break;
+                case RIGHT_BACK:     telemetry.addLine("RIGHT BACK — did wheel spin FORWARD?");          break;
+                case INTAKE_IN:      telemetry.addLine("INTAKE IN — did it pull inward?");               break;
+                case INTAKE_OUT:     telemetry.addLine("INTAKE OUT — did it push outward?");             break;
+                case LEFT_LAUNCHER:  telemetry.addLine("LEFT LAUNCHER — did it spin outward?");          break;
+                case RIGHT_LAUNCHER: telemetry.addLine("RIGHT LAUNCHER — did it spin outward?");         break;
+            }
+            telemetry.addLine("");
+            telemetry.addLine("  GP1 A = YES (correct)");
+            telemetry.addLine("  GP1 B = NO  (wrong direction)");
+            telemetry.addLine("");
             handleConfirmation();
+
         } else {
             telemetry.addLine("Press a button to test a motor.");
             telemetry.addLine("");
@@ -335,49 +335,43 @@ public class MotorDirectionTest extends OpMode {
 
         // ── Controls reminder ──
         telemetry.addLine("━━━ CONTROLS ━━━━━━━━━━━━━━━━━");
-        telemetry.addLine("LB  = Test LEFT FRONT  drive");
-        telemetry.addLine("RB  = Test RIGHT FRONT drive");
-        telemetry.addLine("LT  = Test LEFT BACK   drive");
-        telemetry.addLine("RT  = Test RIGHT BACK  drive");
-        telemetry.addLine("A   = Test INTAKE in");
-        telemetry.addLine("B   = Test INTAKE out");
-        telemetry.addLine("Y   = Show VERDICT");
-        telemetry.addLine("BACK= Reset all");
+        telemetry.addLine("GP1 LB  = LEFT FRONT  drive");
+        telemetry.addLine("GP1 RB  = RIGHT FRONT drive");
+        telemetry.addLine("GP1 LT  = LEFT BACK   drive");
+        telemetry.addLine("GP1 RT  = RIGHT BACK  drive");
+        telemetry.addLine("GP1 A   = INTAKE in");
+        telemetry.addLine("GP1 B   = INTAKE out");
+        telemetry.addLine("GP2 LB  = LEFT  LAUNCHER");
+        telemetry.addLine("GP2 RB  = RIGHT LAUNCHER");
+        telemetry.addLine("GP1 Y   = Show VERDICT");
+        telemetry.addLine("GP1 BACK= Reset all");
         telemetry.addLine("");
 
         // ── Current results summary ──
         telemetry.addLine("━━━ CURRENT RESULTS ━━━━━━━━━━");
-        telemetry.addData("Left Front ", resultIcon(leftFrontResult));
-        telemetry.addData("Right Front", resultIcon(rightFrontResult));
-        telemetry.addData("Left Back  ", resultIcon(leftBackResult));
-        telemetry.addData("Right Back ", resultIcon(rightBackResult));
-        telemetry.addData("Intake     ", resultIcon(intakeResult));
+        telemetry.addData("Left Front    ", resultIcon(leftFrontResult));
+        telemetry.addData("Right Front   ", resultIcon(rightFrontResult));
+        telemetry.addData("Left Back     ", resultIcon(leftBackResult));
+        telemetry.addData("Right Back    ", resultIcon(rightBackResult));
+        telemetry.addData("Intake        ", resultIcon(intakeResult));
+        telemetry.addData("Left Launcher ", resultIcon(leftLauncherResult));
+        telemetry.addData("Right Launcher", resultIcon(rightLauncherResult));
     }
 
     // =========================================================
     // HANDLE YES/NO CONFIRMATION AFTER MOTOR STOPS
     // =========================================================
-    // Called every loop while motor is stopped and awaiting answer.
-    // Uses raw gamepad reads (not edge detection) because we're in
-    // a confirmation state — we just watch for the press.
-    // =========================================================
-    private boolean awaitingConfirm = false;
-
     private void handleConfirmation() {
-        // We check for button presses here specifically for confirm/deny
-        // These use raw reads and we guard with awaitingConfirm flag
         if (!awaitingConfirm) {
             awaitingConfirm = true;
             return;
         }
 
         if (gamepad1.a) {
-            // YES — it spun the right way
             recordResult(activeTest, Result.CORRECT);
             activeTest      = ActiveTest.NONE;
             awaitingConfirm = false;
         } else if (gamepad1.b) {
-            // NO — it spun the wrong way
             recordResult(activeTest, Result.NEEDS_REVERSE);
             activeTest      = ActiveTest.NONE;
             awaitingConfirm = false;
@@ -389,12 +383,14 @@ public class MotorDirectionTest extends OpMode {
     // =========================================================
     private void recordResult(ActiveTest test, Result result) {
         switch (test) {
-            case LEFT_FRONT:  leftFrontResult  = result; break;
-            case RIGHT_FRONT: rightFrontResult = result; break;
-            case LEFT_BACK:   leftBackResult   = result; break;
-            case RIGHT_BACK:  rightBackResult  = result; break;
+            case LEFT_FRONT:     leftFrontResult      = result; break;
+            case RIGHT_FRONT:    rightFrontResult     = result; break;
+            case LEFT_BACK:      leftBackResult       = result; break;
+            case RIGHT_BACK:     rightBackResult      = result; break;
             case INTAKE_IN:
-            case INTAKE_OUT:  intakeResult     = result; break;
+            case INTAKE_OUT:     intakeResult         = result; break;
+            case LEFT_LAUNCHER:  leftLauncherResult   = result; break;
+            case RIGHT_LAUNCHER: rightLauncherResult  = result; break;
         }
     }
 
@@ -407,35 +403,44 @@ public class MotorDirectionTest extends OpMode {
         telemetry.addLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         telemetry.addLine("");
 
-        // Drivetrain
+        // ── Drivetrain ──
         telemetry.addLine("-- DRIVETRAIN --");
-        telemetry.addData("leftFrontDrive  direction",  recommendDrive(leftFrontResult,  true));
-        telemetry.addData("rightFrontDrive direction",  recommendDrive(rightFrontResult, false));
-        telemetry.addData("leftBackDrive   direction",  recommendDrive(leftBackResult,   true));
-        telemetry.addData("rightBackDrive  direction",  recommendDrive(rightBackResult,  false));
+        telemetry.addData("leftFrontDrive  direction", recommendDrive(leftFrontResult,  true));
+        telemetry.addData("rightFrontDrive direction", recommendDrive(rightFrontResult, false));
+        telemetry.addData("leftBackDrive   direction", recommendDrive(leftBackResult,   true));
+        telemetry.addData("rightBackDrive  direction", recommendDrive(rightBackResult,  false));
         telemetry.addLine("");
 
-        // Intake
+        // ── Intake ──
         telemetry.addLine("-- INTAKE --");
         if (intakeResult == Result.NOT_TESTED) {
-            telemetry.addLine("intake: NOT TESTED yet");
+            telemetry.addLine("intake: ⏳ NOT TESTED yet");
         } else if (intakeResult == Result.CORRECT) {
-            telemetry.addLine("intake: setDirection(FORWARD) — no change needed");
+            telemetry.addLine("intake: setDirection(FORWARD)  ✅");
         } else {
-            telemetry.addLine("intake: setDirection(REVERSE) — flip it");
+            telemetry.addLine("intake: setDirection(REVERSE)  ❌ flip it");
         }
         telemetry.addLine("");
 
-        // Warning if anything untested
-        boolean anyUntested = leftFrontResult  == Result.NOT_TESTED
-                || rightFrontResult == Result.NOT_TESTED
-                || leftBackResult   == Result.NOT_TESTED
-                || rightBackResult  == Result.NOT_TESTED
-                || intakeResult     == Result.NOT_TESTED;
+        // ── Launchers ──
+        telemetry.addLine("-- LAUNCHERS --");
+        telemetry.addData("left_launcher  direction", recommendLauncher(leftLauncherResult,  true));
+        telemetry.addData("right_launcher direction", recommendLauncher(rightLauncherResult, false));
+        telemetry.addLine("");
+
+        // ── All-tested check ──
+        boolean anyUntested =
+                leftFrontResult      == Result.NOT_TESTED ||
+                        rightFrontResult     == Result.NOT_TESTED ||
+                        leftBackResult       == Result.NOT_TESTED ||
+                        rightBackResult      == Result.NOT_TESTED ||
+                        intakeResult         == Result.NOT_TESTED ||
+                        leftLauncherResult   == Result.NOT_TESTED ||
+                        rightLauncherResult  == Result.NOT_TESTED;
 
         if (anyUntested) {
             telemetry.addLine("⚠ Some motors not tested yet.");
-            telemetry.addLine("  Press Y again to go back and test them.");
+            telemetry.addLine("  Press Y to go back and test them.");
         } else {
             telemetry.addLine("✅ All motors tested!");
             telemetry.addLine("  Copy the directions above into");
@@ -443,7 +448,7 @@ public class MotorDirectionTest extends OpMode {
         }
 
         telemetry.addLine("");
-        telemetry.addLine("Press Y to go back | BACK to reset");
+        telemetry.addLine("Press Y to go back | GP1 BACK to reset");
     }
 
     // =========================================================
@@ -451,23 +456,46 @@ public class MotorDirectionTest extends OpMode {
     // =========================================================
 
     /**
-     * Returns the recommended direction string for a drive motor.
-     * Left-side motors default to FORWARD, right-side to REVERSE
-     * for a standard mecanum setup — flip if the test said wrong.
+     * Drive motor recommendation.
+     * Standard mecanum: left = FORWARD, right = REVERSE.
+     * If test says NEEDS_REVERSE, flip from the standard.
      */
     private String recommendDrive(Result result, boolean isLeftSide) {
         if (result == Result.NOT_TESTED) return "⏳ NOT TESTED";
-
-        // Standard mecanum: left = FORWARD, right = REVERSE
-        // If the test says CORRECT, use the standard direction.
-        // If NEEDS_REVERSE, flip it.
         boolean useForward;
         if (isLeftSide) {
             useForward = (result == Result.CORRECT);
         } else {
-            useForward = (result == Result.NEEDS_REVERSE); // right side is inverted standard
+            useForward = (result == Result.NEEDS_REVERSE);
         }
+        return useForward ? "✅ FORWARD" : "❌ REVERSE";
+    }
 
+    /**
+     * Launcher recommendation.
+     * For a dual-flywheel shooter facing the same direction, the two
+     * wheels typically spin in opposite directions (one FORWARD, one
+     * REVERSE) to both push the ring upward/outward.
+     *
+     * Convention used here:
+     *   left_launcher  → expected to be FORWARD  when spinning outward
+     *   right_launcher → expected to be REVERSE  when spinning outward
+     *
+     * If the test says the motor was already correct at FORWARD power,
+     * use FORWARD; if it needs to be flipped, use REVERSE.
+     */
+    private String recommendLauncher(Result result, boolean isLeftSide) {
+        if (result == Result.NOT_TESTED) return "⏳ NOT TESTED";
+
+        // Left launcher expected FORWARD; right expected REVERSE.
+        // If the test result agrees with that expectation → use the standard direction.
+        // If it disagrees → flip it.
+        boolean useForward;
+        if (isLeftSide) {
+            useForward = (result == Result.CORRECT);       // left: CORRECT → FORWARD
+        } else {
+            useForward = (result == Result.NEEDS_REVERSE); // right: CORRECT at FORWARD → actually needs REVERSE
+        }
         return useForward ? "✅ FORWARD" : "❌ REVERSE";
     }
 
@@ -485,18 +513,22 @@ public class MotorDirectionTest extends OpMode {
         if (leftBackDrive   != null) leftBackDrive.setPower(0);
         if (rightBackDrive  != null) rightBackDrive.setPower(0);
         if (intake          != null) intake.setPower(0);
+        if (leftLauncher    != null) leftLauncher.setPower(0);
+        if (rightLauncher   != null) rightLauncher.setPower(0);
     }
 
     private void resetAll() {
         stopAllMotors();
-        activeTest      = ActiveTest.NONE;
-        showVerdict     = false;
-        awaitingConfirm = false;
-        leftFrontResult  = Result.NOT_TESTED;
-        rightFrontResult = Result.NOT_TESTED;
-        leftBackResult   = Result.NOT_TESTED;
-        rightBackResult  = Result.NOT_TESTED;
-        intakeResult     = Result.NOT_TESTED;
+        activeTest           = ActiveTest.NONE;
+        showVerdict          = false;
+        awaitingConfirm      = false;
+        leftFrontResult      = Result.NOT_TESTED;
+        rightFrontResult     = Result.NOT_TESTED;
+        leftBackResult       = Result.NOT_TESTED;
+        rightBackResult      = Result.NOT_TESTED;
+        intakeResult         = Result.NOT_TESTED;
+        leftLauncherResult   = Result.NOT_TESTED;
+        rightLauncherResult  = Result.NOT_TESTED;
     }
 
     @Override

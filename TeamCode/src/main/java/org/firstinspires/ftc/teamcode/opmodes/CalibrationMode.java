@@ -2,8 +2,13 @@ package org.firstinspires.ftc.teamcode.opmodes;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.CRServo;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
+import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.teamcode.vision.LimelightVision;
 
@@ -12,142 +17,366 @@ import java.util.ArrayList;
 @TeleOp(name = "CALIBRATION MODE", group = "TEST")
 public class CalibrationMode extends OpMode {
 
-    // ===== DRIVE =====
+    // ===== DRIVETRAIN =====
     private DcMotor leftFront, rightFront, leftBack, rightBack;
+
+    // ===== SHOOTER =====
+    private DcMotorEx leftLauncher, rightLauncher;
+    private CRServo   leftFeeder,   rightFeeder;
+    private Servo     diverter;
+
+    // ===== INTAKE =====
+    private DcMotor intake;
 
     // ===== VISION =====
     private LimelightVision limelight;
 
+    // ===== SHOOTER CONSTANTS =====
+    // Tune these here during calibration, then copy to ri3dStarterCode.java
+    private static final double RPM_TARGET       = 2000;   // ticks/sec = RPM * 28 / 60
+    private static final double PIDF_P           = 300;
+    private static final double PIDF_F           = 10;
+    private static final double FEED_TIME_SEC    = 1.5;
+    private static final double FULL_SPEED       = 1.0;
+    private static final double STOP_SPEED       = 0.0;
+    private static final double DIVERTER_LEFT    = 0.2962;
+    private static final double DIVERTER_RIGHT   = 0.0;
+
+    private double launcherTargetVelocity = RPM_TARGET * 28.0 / 60.0;
+
+    // ===== FEEDER TIMER =====
+    private ElapsedTime leftFeederTimer  = new ElapsedTime();
+    private ElapsedTime rightFeederTimer = new ElapsedTime();
+    private boolean leftFeeding   = false;
+    private boolean rightFeeding  = false;
+
+    // ===== SHOOTER STATE =====
+    private boolean flywheelsRunning = false;
+    private boolean diverterLeft     = true;   // true = LEFT position
+
+    // ===== INTAKE STATE =====
+    private boolean intakeRunning = false;
+
     // ===== DATA STORAGE =====
-    ArrayList<Double> baseOffsets = new ArrayList<>();
-    ArrayList<Double> leftOffsets = new ArrayList<>();
+    ArrayList<Double> baseOffsets  = new ArrayList<>();
+    ArrayList<Double> leftOffsets  = new ArrayList<>();
     ArrayList<Double> rightOffsets = new ArrayList<>();
-    ArrayList<Double> distances = new ArrayList<>();
+    ArrayList<Double> distances    = new ArrayList<>();
 
     // ===== BUTTON EDGE DETECTION =====
-    private boolean lastA = false;
-    private boolean lastB = false;
-    private boolean lastX = false;
-    private boolean lastY = false;
+    private boolean lastA        = false;
+    private boolean lastB        = false;
+    private boolean lastX        = false;
+    private boolean lastY        = false;
+    private boolean lastLB       = false;
+    private boolean lastRB       = false;
+    private boolean lastDpadDown = false;
+    private boolean lastDpadUp   = false;
 
+    // =========================================================
+    // INIT
+    // =========================================================
     @Override
     public void init() {
-        leftFront = hardwareMap.get(DcMotor.class, "left_front_drive");
+
+        // ── Drivetrain ──
+        leftFront  = hardwareMap.get(DcMotor.class, "left_front_drive");
         rightFront = hardwareMap.get(DcMotor.class, "right_front_drive");
-        leftBack = hardwareMap.get(DcMotor.class, "left_back_drive");
-        rightBack = hardwareMap.get(DcMotor.class, "right_back_drive");
+        leftBack   = hardwareMap.get(DcMotor.class, "left_back_drive");
+        rightBack  = hardwareMap.get(DcMotor.class, "right_back_drive");
 
-        leftFront.setDirection(DcMotor.Direction.FORWARD);
-        rightFront.setDirection(DcMotor.Direction.REVERSE);
-        leftBack.setDirection(DcMotor.Direction.FORWARD);
-        rightBack.setDirection(DcMotor.Direction.REVERSE);
+        leftFront.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightFront.setDirection(DcMotorSimple.Direction.REVERSE);
+        leftBack.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightBack.setDirection(DcMotorSimple.Direction.REVERSE);
 
+        leftFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rightFront.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        leftBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rightBack.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        // ── Shooters ──
+        leftLauncher  = hardwareMap.get(DcMotorEx.class, "left_launcher");
+        rightLauncher = hardwareMap.get(DcMotorEx.class, "right_launcher");
+
+        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        leftLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        rightLauncher.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        leftLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(PIDF_P, 0, 0, PIDF_F));
+        rightLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(PIDF_P, 0, 0, PIDF_F));
+
+        // ── Feeders ──
+        leftFeeder  = hardwareMap.get(CRServo.class, "left_feeder");
+        rightFeeder = hardwareMap.get(CRServo.class, "right_feeder");
+
+        leftFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightFeeder.setDirection(DcMotorSimple.Direction.REVERSE);
+
+        leftFeeder.setPower(STOP_SPEED);
+        rightFeeder.setPower(STOP_SPEED);
+
+        // ── Diverter ──
+        diverter = hardwareMap.get(Servo.class, "diverter");
+        diverter.setPosition(DIVERTER_LEFT); // default to left
+
+        // ── Intake ──
+        intake = hardwareMap.get(DcMotor.class, "intake");
+        intake.setDirection(DcMotorSimple.Direction.REVERSE);
+        intake.setPower(0);
+
+        // ── Vision ──
         limelight = new LimelightVision(hardwareMap);
 
-        telemetry.addLine("Calibration Mode Ready");
+        telemetry.addLine("CALIBRATION MODE Ready");
+        telemetry.addLine("See CONTROLS section below");
+        telemetry.update();
     }
 
+    // =========================================================
+    // MAIN LOOP
+    // =========================================================
     @Override
     public void loop() {
 
         limelight.update();
 
-        // ===== DRIVE =====
-        double forward = -gamepad1.left_stick_y;
-        double strafe = gamepad1.left_stick_x;
-        double rotate = gamepad1.right_stick_x;
-
-        mecanumDrive(forward, strafe, rotate);
-
-        double tx = 0;
+        // ── Read vision ──
+        double tx       = 0;
         double distance = 0;
-
         if (limelight.hasTarget()) {
-            tx = limelight.getTx();
+            tx       = limelight.getTx();
             distance = limelight.getDistanceFromArea();
         }
 
-        // ===== RECORD BASE OFFSET =====
-        if (gamepad1.a && !lastA && limelight.hasTarget()) {
+        // ── Read buttons ──
+        boolean a        = gamepad1.a;
+        boolean b        = gamepad1.b;
+        boolean x        = gamepad1.x;
+        boolean y        = gamepad1.y;
+        boolean lb       = gamepad1.left_bumper;
+        boolean rb       = gamepad1.right_bumper;
+        boolean dpadDown = gamepad1.dpad_down;
+        boolean dpadUp   = gamepad1.dpad_up;
+
+        // =========================================================
+        // DRIVETRAIN
+        // =========================================================
+        double forward = -gamepad1.left_stick_y;
+        double strafe  =  gamepad1.left_stick_x;
+        double rotate  =  gamepad1.right_stick_x;
+        mecanumDrive(forward, strafe, rotate);
+
+        // =========================================================
+        // FLYWHEEL TOGGLE  —  Left Trigger = toggle on/off
+        // =========================================================
+        if (gamepad1.left_trigger > 0.5 && !flywheelsRunning) {
+            flywheelsRunning = true;
+            leftLauncher.setVelocity(launcherTargetVelocity);
+            rightLauncher.setVelocity(launcherTargetVelocity);
+        } else if (gamepad1.left_trigger <= 0.5 && flywheelsRunning) {
+            // Keep spinning — driver releases trigger to keep them on,
+            // use Right Trigger to kill
+        }
+
+        // Right trigger kills flywheels
+        if (gamepad1.right_trigger > 0.5) {
+            flywheelsRunning = false;
+            leftLauncher.setVelocity(0);
+            rightLauncher.setVelocity(0);
+        }
+
+        // Keep velocity commanded while running
+        if (flywheelsRunning) {
+            leftLauncher.setVelocity(launcherTargetVelocity);
+            rightLauncher.setVelocity(launcherTargetVelocity);
+        }
+
+        // =========================================================
+        // FIRE LEFT FEEDER  —  Left Bumper
+        // =========================================================
+        if (lb && !lastLB) {
+            leftFeeding = true;
+            leftFeeder.setPower(FULL_SPEED);
+            leftFeederTimer.reset();
+        }
+        if (leftFeeding && leftFeederTimer.seconds() > FEED_TIME_SEC) {
+            leftFeeding = false;
+            leftFeeder.setPower(STOP_SPEED);
+        }
+
+        // =========================================================
+        // FIRE RIGHT FEEDER  —  Right Bumper
+        // =========================================================
+        if (rb && !lastRB) {
+            rightFeeding = true;
+            rightFeeder.setPower(FULL_SPEED);
+            rightFeederTimer.reset();
+        }
+        if (rightFeeding && rightFeederTimer.seconds() > FEED_TIME_SEC) {
+            rightFeeding = false;
+            rightFeeder.setPower(STOP_SPEED);
+        }
+
+        // =========================================================
+        // DIVERTER TOGGLE  —  D-Pad Down
+        // =========================================================
+        if (dpadDown && !lastDpadDown) {
+            diverterLeft = !diverterLeft;
+            diverter.setPosition(diverterLeft ? DIVERTER_LEFT : DIVERTER_RIGHT);
+        }
+
+        // =========================================================
+        // INTAKE  —  D-Pad Up = toggle forward | hold to reverse
+        // =========================================================
+        if (dpadUp && !lastDpadUp) {
+            intakeRunning = !intakeRunning;
+            intake.setPower(intakeRunning ? 1.0 : 0.0);
+        }
+
+        // Hold both bumpers to run intake in reverse (eject)
+        if (gamepad1.left_bumper && gamepad1.right_bumper) {
+            intake.setPower(-1.0);
+        }
+
+        // =========================================================
+        // CALIBRATION DATA RECORDING
+        // =========================================================
+
+        // A = save BASE offset (center-aligned shot)
+        if (a && !lastA && limelight.hasTarget()) {
             baseOffsets.add(tx);
             distances.add(distance);
         }
 
-        // ===== RECORD LEFT SHOOTER =====
-        if (gamepad1.b && !lastB && limelight.hasTarget()) {
+        // B = save LEFT shooter offset
+        if (b && !lastB && limelight.hasTarget()) {
             leftOffsets.add(tx);
         }
 
-        // ===== RECORD RIGHT SHOOTER =====
-        if (gamepad1.x && !lastX && limelight.hasTarget()) {
+        // X = save RIGHT shooter offset
+        if (x && !lastX && limelight.hasTarget()) {
             rightOffsets.add(tx);
         }
 
-        // ===== CLEAR DATA =====
-        if (gamepad1.y && !lastY) {
+        // Y = clear all data
+        if (y && !lastY) {
             baseOffsets.clear();
             leftOffsets.clear();
             rightOffsets.clear();
             distances.clear();
         }
 
-        lastA = gamepad1.a;
-        lastB = gamepad1.b;
-        lastX = gamepad1.x;
-        lastY = gamepad1.y;
+        // ── Edge detection update ──
+        lastA        = a;
+        lastB        = b;
+        lastX        = x;
+        lastY        = y;
+        lastLB       = lb;
+        lastRB       = rb;
+        lastDpadDown = dpadDown;
+        lastDpadUp   = dpadUp;
 
-        // ===== CALCULATIONS =====
-        double avgBase = average(baseOffsets);
-        double avgLeft = average(leftOffsets);
+        // =========================================================
+        // CALCULATIONS
+        // =========================================================
+        double avgBase  = average(baseOffsets);
+        double avgLeft  = average(leftOffsets);
         double avgRight = average(rightOffsets);
 
-        double suggestedLeftOffset = avgBase - avgLeft;
+        double suggestedLeftOffset  = avgBase - avgLeft;
         double suggestedRightOffset = avgRight - avgBase;
 
-        // ===== TELEMETRY =====
-        telemetry.addLine("=== LIVE DATA ===");
-        telemetry.addData("tx", tx);
-        telemetry.addData("distance (cm)", distance);
+        double leftRPM  = leftLauncher.getVelocity()  * 60.0 / 28.0;
+        double rightRPM = rightLauncher.getVelocity() * 60.0 / 28.0;
 
-        telemetry.addLine("\n=== RECORDED ===");
-        telemetry.addData("Base Samples", baseOffsets.size());
-        telemetry.addData("Left Samples", leftOffsets.size());
+        // =========================================================
+        // TELEMETRY
+        // =========================================================
+        telemetry.addLine("======= LIVE DATA =======");
+        telemetry.addData("tx (degrees)",    String.format("%.3f", tx));
+        telemetry.addData("distance (cm)",   String.format("%.1f", distance));
+        telemetry.addData("Left RPM",        String.format("%.0f", leftRPM));
+        telemetry.addData("Right RPM",       String.format("%.0f", rightRPM));
+        telemetry.addData("RPM Target",      String.format("%.0f", RPM_TARGET));
+
+        telemetry.addLine("");
+        telemetry.addLine("======= STATES =======");
+        telemetry.addData("Flywheels",  flywheelsRunning ? "RUNNING" : "OFF");
+        telemetry.addData("Diverter",   diverterLeft     ? "LEFT"    : "RIGHT");
+        telemetry.addData("Intake",     intakeRunning    ? "ON"      : "OFF");
+        telemetry.addData("L Feeder",   leftFeeding      ? "FEEDING" : "idle");
+        telemetry.addData("R Feeder",   rightFeeding     ? "FEEDING" : "idle");
+
+        telemetry.addLine("");
+        telemetry.addLine("======= RECORDED SAMPLES =======");
+        telemetry.addData("Base Samples",  baseOffsets.size());
+        telemetry.addData("Left Samples",  leftOffsets.size());
         telemetry.addData("Right Samples", rightOffsets.size());
 
-        telemetry.addLine("\n=== RESULTS ===");
-        telemetry.addData("BASE_OFFSET", avgBase);
-        telemetry.addData("LEFT_OFFSET", suggestedLeftOffset);
-        telemetry.addData("RIGHT_OFFSET", suggestedRightOffset);
+        telemetry.addLine("");
+        telemetry.addLine("======= RESULTS =======");
+        telemetry.addData("BASE_OFFSET",            String.format("%.4f", avgBase));
+        telemetry.addData("LEFT_SHOOTER_OFFSET",    String.format("%.4f", suggestedLeftOffset));
+        telemetry.addData("RIGHT_SHOOTER_OFFSET",   String.format("%.4f", suggestedRightOffset));
 
-        telemetry.addLine("\n=== CONTROLS ===");
-        telemetry.addLine("A = Save BASE");
-        telemetry.addLine("B = Save LEFT");
-        telemetry.addLine("X = Save RIGHT");
-        telemetry.addLine("Y = Clear");
+        telemetry.addLine("");
+        telemetry.addLine("======= CONTROLS =======");
+        telemetry.addLine("Left Stick       = Drive");
+        telemetry.addLine("Right Stick      = Rotate");
+        telemetry.addLine("Left Trigger     = Start Flywheels");
+        telemetry.addLine("Right Trigger    = Stop Flywheels");
+        telemetry.addLine("Left Bumper      = Fire LEFT feeder");
+        telemetry.addLine("Right Bumper     = Fire RIGHT feeder");
+        telemetry.addLine("Both Bumpers     = Intake REVERSE (eject)");
+        telemetry.addLine("D-Pad Up         = Toggle Intake");
+        telemetry.addLine("D-Pad Down       = Toggle Diverter");
+        telemetry.addLine("A                = Save BASE offset");
+        telemetry.addLine("B                = Save LEFT offset");
+        telemetry.addLine("X                = Save RIGHT offset");
+        telemetry.addLine("Y                = Clear all data");
 
         telemetry.update();
     }
 
-    // ===== DRIVE METHOD =====
+    // =========================================================
+    // MECANUM DRIVE
+    // =========================================================
     void mecanumDrive(double forward, double strafe, double rotate) {
         double denominator = Math.max(Math.abs(forward) + Math.abs(strafe) + Math.abs(rotate), 1);
 
-        double lf = (forward + strafe + rotate) / denominator;
-        double rf = (forward - strafe - rotate) / denominator;
-        double lb = (forward - strafe + rotate) / denominator;
-        double rb = (forward + strafe - rotate) / denominator;
-
-        leftFront.setPower(lf);
-        rightFront.setPower(rf);
-        leftBack.setPower(lb);
-        rightBack.setPower(rb);
+        leftFront.setPower((forward + strafe + rotate) / denominator);
+        rightFront.setPower((forward - strafe - rotate) / denominator);
+        leftBack.setPower((forward - strafe + rotate) / denominator);
+        rightBack.setPower((forward + strafe - rotate) / denominator);
     }
 
-    // ===== AVERAGE HELPER =====
+    // =========================================================
+    // AVERAGE HELPER
+    // =========================================================
     double average(ArrayList<Double> list) {
         if (list.size() == 0) return 0;
         double sum = 0;
         for (double v : list) sum += v;
         return sum / list.size();
+    }
+
+    // =========================================================
+    // STOP
+    // =========================================================
+    @Override
+    public void stop() {
+        leftLauncher.setVelocity(0);
+        rightLauncher.setVelocity(0);
+        leftFeeder.setPower(STOP_SPEED);
+        rightFeeder.setPower(STOP_SPEED);
+        intake.setPower(0);
     }
 }

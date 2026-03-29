@@ -32,8 +32,9 @@ public class CalibrationMode extends OpMode {
     private LimelightVision limelight;
 
     // ===== SHOOTER CONSTANTS =====
-    // Tune these here during calibration, then copy to ri3dStarterCode.java
-    private static final double RPM_TARGET       = 3700.23786;   // ticks/sec = RPM * 28 / 60
+    private static final double RPM_STEP         = 10;
+    private static final double RPM_MIN          = 500;
+    private static final double RPM_MAX          = 6000;
     private static final double PIDF_P           = 300;
     private static final double PIDF_F           = 10;
     private static final double FEED_TIME_SEC    = 2008;
@@ -42,7 +43,8 @@ public class CalibrationMode extends OpMode {
     private static final double DIVERTER_LEFT    = 0.2962;
     private static final double DIVERTER_RIGHT   = 0.0;
 
-    private double launcherTargetVelocity = RPM_TARGET * 28.0 / 60.0;
+    private double currentRPM             = 3700;
+    private double launcherTargetVelocity = currentRPM * 28.0 / 60.0;
 
     // ===== FEEDER TIMER =====
     private ElapsedTime leftFeederTimer  = new ElapsedTime();
@@ -79,8 +81,10 @@ public class CalibrationMode extends OpMode {
     private boolean lastY        = false;
     private boolean lastLB       = false;
     private boolean lastRB       = false;
-    private boolean lastDpadDown = false;
-    private boolean lastDpadUp   = false;
+    private boolean lastDpadDown  = false;
+    private boolean lastDpadUp    = false;
+    private boolean lastDpadLeft  = false;   // ADD
+    private boolean lastDpadRight = false;   // ADD
 
     // =========================================================
     // INIT
@@ -259,7 +263,7 @@ public class CalibrationMode extends OpMode {
         }
 
         // =========================================================
-        // INTAKE  —  D-Pad Up = toggle forward | hold to reverse
+        // INTAKE  —  D-Pad Up = toggle forward | Both Bumpers = reverse
         // =========================================================
         if (dpadUp && !lastDpadUp) {
             intakeRunning = !intakeRunning;
@@ -336,7 +340,7 @@ public class CalibrationMode extends OpMode {
         telemetry.addData("Has Target",      limelight.hasTarget() ? "YES" : "NO");
         telemetry.addData("Left RPM",        String.format("%.0f", leftRPM));
         telemetry.addData("Right RPM",       String.format("%.0f", rightRPM));
-        telemetry.addData("RPM Target",      String.format("%.0f", RPM_TARGET));
+        telemetry.addData("RPM Target", String.format("%.0f", currentRPM));  // was RPM_TARGET
 
         telemetry.addLine("");
         telemetry.addLine("======= STATES =======");
@@ -384,11 +388,13 @@ public class CalibrationMode extends OpMode {
         telemetry.addLine("Right Stick      = Rotate");
         telemetry.addLine("Left Trigger     = Start Flywheels");
         telemetry.addLine("Right Trigger    = Stop Flywheels");
+        telemetry.addLine("D-Pad LEFT       = RPM - 100");
+        telemetry.addLine("D-Pad RIGHT      = RPM + 100");
+        telemetry.addLine("D-Pad Up         = Toggle Intake");
+        telemetry.addLine("D-Pad Down       = Toggle Diverter");
         telemetry.addLine("Left Bumper      = Fire LEFT feeder + log shot");
         telemetry.addLine("Right Bumper     = Fire RIGHT feeder + log shot");
         telemetry.addLine("Both Bumpers     = Intake REVERSE (eject)");
-        telemetry.addLine("D-Pad Up         = Toggle Intake");
-        telemetry.addLine("D-Pad Down       = Toggle Diverter");
         telemetry.addLine("A                = Save BASE offset");
         telemetry.addLine("B                = Save LEFT offset");
         telemetry.addLine("X                = Save RIGHT offset");

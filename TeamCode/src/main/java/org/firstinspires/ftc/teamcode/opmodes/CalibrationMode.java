@@ -33,10 +33,10 @@ public class CalibrationMode extends OpMode {
 
     // ===== SHOOTER CONSTANTS =====
     // Tune these here during calibration, then copy to ri3dStarterCode.java
-    private static final double RPM_TARGET       = 2000;   // ticks/sec = RPM * 28 / 60
+    private static final double RPM_TARGET       = 3700.23786;   // ticks/sec = RPM * 28 / 60
     private static final double PIDF_P           = 300;
     private static final double PIDF_F           = 10;
-    private static final double FEED_TIME_SEC    = 1.5;
+    private static final double FEED_TIME_SEC    = 2008;
     private static final double FULL_SPEED       = 1.0;
     private static final double STOP_SPEED       = 0.0;
     private static final double DIVERTER_LEFT    = 0.2962;

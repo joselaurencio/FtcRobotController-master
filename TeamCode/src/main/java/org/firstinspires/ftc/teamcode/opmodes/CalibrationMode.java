@@ -108,8 +108,8 @@ public class CalibrationMode extends OpMode {
         leftLauncher  = hardwareMap.get(DcMotorEx.class, "left_launcher");
         rightLauncher = hardwareMap.get(DcMotorEx.class, "right_launcher");
 
-        leftLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
-        rightLauncher.setDirection(DcMotorSimple.Direction.REVERSE);
+        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
+        rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);

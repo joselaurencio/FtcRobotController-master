@@ -63,6 +63,15 @@ public class CalibrationMode extends OpMode {
     ArrayList<Double> rightOffsets = new ArrayList<>();
     ArrayList<Double> distances    = new ArrayList<>();
 
+    // ===== SHOT SNAPSHOT LOGS =====
+    // Each entry = one shot fired. Records tx, distance, and both RPMs at moment of fire.
+    // Use these to fill in the tuning spreadsheet row by row.
+    ArrayList<Double> shotTxLog       = new ArrayList<>();  // limelight tx at fire
+    ArrayList<Double> shotDistLog     = new ArrayList<>();  // distance (cm) at fire
+    ArrayList<Double> shotLeftRpmLog  = new ArrayList<>();  // left flywheel RPM at fire
+    ArrayList<Double> shotRightRpmLog = new ArrayList<>();  // right flywheel RPM at fire
+    ArrayList<String> shotSideLog     = new ArrayList<>();  // "LEFT" or "RIGHT"
+
     // ===== BUTTON EDGE DETECTION =====
     private boolean lastA        = false;
     private boolean lastB        = false;
@@ -206,6 +215,14 @@ public class CalibrationMode extends OpMode {
             leftFeeding = true;
             leftFeeder.setPower(FULL_SPEED);
             leftFeederTimer.reset();
+            // Snapshot vision + RPM at the exact moment of fire
+            if (limelight.hasTarget()) {
+                shotTxLog.add(tx);
+                shotDistLog.add(distance);
+                shotLeftRpmLog.add(leftLauncher.getVelocity() * 60.0 / 28.0);
+                shotRightRpmLog.add(rightLauncher.getVelocity() * 60.0 / 28.0);
+                shotSideLog.add("LEFT");
+            }
         }
         if (leftFeeding && leftFeederTimer.seconds() > FEED_TIME_SEC) {
             leftFeeding = false;
@@ -219,6 +236,14 @@ public class CalibrationMode extends OpMode {
             rightFeeding = true;
             rightFeeder.setPower(FULL_SPEED);
             rightFeederTimer.reset();
+            // Snapshot vision + RPM at the exact moment of fire
+            if (limelight.hasTarget()) {
+                shotTxLog.add(tx);
+                shotDistLog.add(distance);
+                shotLeftRpmLog.add(leftLauncher.getVelocity() * 60.0 / 28.0);
+                shotRightRpmLog.add(rightLauncher.getVelocity() * 60.0 / 28.0);
+                shotSideLog.add("RIGHT");
+            }
         }
         if (rightFeeding && rightFeederTimer.seconds() > FEED_TIME_SEC) {
             rightFeeding = false;
@@ -272,6 +297,11 @@ public class CalibrationMode extends OpMode {
             leftOffsets.clear();
             rightOffsets.clear();
             distances.clear();
+            shotTxLog.clear();
+            shotDistLog.clear();
+            shotLeftRpmLog.clear();
+            shotRightRpmLog.clear();
+            shotSideLog.clear();
         }
 
         // ── Edge detection update ──
@@ -303,6 +333,7 @@ public class CalibrationMode extends OpMode {
         telemetry.addLine("======= LIVE DATA =======");
         telemetry.addData("tx (degrees)",    String.format("%.3f", tx));
         telemetry.addData("distance (cm)",   String.format("%.1f", distance));
+        telemetry.addData("Has Target",      limelight.hasTarget() ? "YES" : "NO");
         telemetry.addData("Left RPM",        String.format("%.0f", leftRPM));
         telemetry.addData("Right RPM",       String.format("%.0f", rightRPM));
         telemetry.addData("RPM Target",      String.format("%.0f", RPM_TARGET));
@@ -327,21 +358,41 @@ public class CalibrationMode extends OpMode {
         telemetry.addData("LEFT_SHOOTER_OFFSET",    String.format("%.4f", suggestedLeftOffset));
         telemetry.addData("RIGHT_SHOOTER_OFFSET",   String.format("%.4f", suggestedRightOffset));
 
+        // ── Shot log — show last 5 shots with full tx/distance/RPM snapshot ──
+        telemetry.addLine("");
+        telemetry.addLine("======= SHOT LOG (last 5) =======");
+        telemetry.addData("Total Shots", shotTxLog.size());
+        int logSize  = shotTxLog.size();
+        int showFrom = Math.max(0, logSize - 5); // show at most 5 most recent
+        for (int i = showFrom; i < logSize; i++) {
+            int shotNum = i + 1;
+            telemetry.addLine(String.format(
+                    "#%d [%s] tx=%.3f° dist=%.1fcm L=%.0f R=%.0f RPM",
+                    shotNum,
+                    shotSideLog.get(i),
+                    shotTxLog.get(i),
+                    shotDistLog.get(i),
+                    shotLeftRpmLog.get(i),
+                    shotRightRpmLog.get(i)
+            ));
+        }
+        if (logSize == 0) telemetry.addLine("  No shots fired yet");
+
         telemetry.addLine("");
         telemetry.addLine("======= CONTROLS =======");
         telemetry.addLine("Left Stick       = Drive");
         telemetry.addLine("Right Stick      = Rotate");
         telemetry.addLine("Left Trigger     = Start Flywheels");
         telemetry.addLine("Right Trigger    = Stop Flywheels");
-        telemetry.addLine("Left Bumper      = Fire LEFT feeder");
-        telemetry.addLine("Right Bumper     = Fire RIGHT feeder");
+        telemetry.addLine("Left Bumper      = Fire LEFT feeder + log shot");
+        telemetry.addLine("Right Bumper     = Fire RIGHT feeder + log shot");
         telemetry.addLine("Both Bumpers     = Intake REVERSE (eject)");
         telemetry.addLine("D-Pad Up         = Toggle Intake");
         telemetry.addLine("D-Pad Down       = Toggle Diverter");
         telemetry.addLine("A                = Save BASE offset");
         telemetry.addLine("B                = Save LEFT offset");
         telemetry.addLine("X                = Save RIGHT offset");
-        telemetry.addLine("Y                = Clear all data");
+        telemetry.addLine("Y                = Clear ALL data + shot log");
 
         telemetry.update();
     }

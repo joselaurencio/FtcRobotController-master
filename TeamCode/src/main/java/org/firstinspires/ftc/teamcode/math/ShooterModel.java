@@ -21,8 +21,8 @@ public class ShooterModel {
         // d is in CENTIMETERS
 
         if (USE_LINEAR_MODEL) {
-            // Linear regression: RPM = 3.67626 * distance + 1746.15732
-            double rpm = 3.67626 * d + 1746.15732;
+            // Linear regression: RPM = 8.54396 * distance + 1718.5989
+            double rpm = 8.54396 * d + 1718.5989;
 
             return Math.max(rpm, 0);
         }

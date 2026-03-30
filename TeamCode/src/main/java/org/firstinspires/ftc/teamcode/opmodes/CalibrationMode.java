@@ -54,7 +54,7 @@ public class CalibrationMode extends OpMode {
 
     // ===== SHOOTER STATE =====
     private boolean flywheelsRunning = false;
-    private boolean diverterLeft     = true;   // true = LEFT position
+    private boolean diverterLeft     = true;
 
     // ===== INTAKE STATE =====
     private boolean intakeRunning = false;
@@ -66,25 +66,23 @@ public class CalibrationMode extends OpMode {
     ArrayList<Double> distances    = new ArrayList<>();
 
     // ===== SHOT SNAPSHOT LOGS =====
-    // Each entry = one shot fired. Records tx, distance, and both RPMs at moment of fire.
-    // Use these to fill in the tuning spreadsheet row by row.
-    ArrayList<Double> shotTxLog       = new ArrayList<>();  // limelight tx at fire
-    ArrayList<Double> shotDistLog     = new ArrayList<>();  // distance (cm) at fire
-    ArrayList<Double> shotLeftRpmLog  = new ArrayList<>();  // left flywheel RPM at fire
-    ArrayList<Double> shotRightRpmLog = new ArrayList<>();  // right flywheel RPM at fire
-    ArrayList<String> shotSideLog     = new ArrayList<>();  // "LEFT" or "RIGHT"
+    ArrayList<Double> shotTxLog       = new ArrayList<>();
+    ArrayList<Double> shotDistLog     = new ArrayList<>();
+    ArrayList<Double> shotLeftRpmLog  = new ArrayList<>();
+    ArrayList<Double> shotRightRpmLog = new ArrayList<>();
+    ArrayList<String> shotSideLog     = new ArrayList<>();
 
     // ===== BUTTON EDGE DETECTION =====
-    private boolean lastA        = false;
-    private boolean lastB        = false;
-    private boolean lastX        = false;
-    private boolean lastY        = false;
-    private boolean lastLB       = false;
-    private boolean lastRB       = false;
+    private boolean lastA         = false;
+    private boolean lastB         = false;
+    private boolean lastX         = false;
+    private boolean lastY         = false;
+    private boolean lastLB        = false;
+    private boolean lastRB        = false;
     private boolean lastDpadDown  = false;
     private boolean lastDpadUp    = false;
-    private boolean lastDpadLeft  = false;   // ADD
-    private boolean lastDpadRight = false;   // ADD
+    private boolean lastDpadLeft  = false;
+    private boolean lastDpadRight = false;
 
     // =========================================================
     // INIT
@@ -138,7 +136,7 @@ public class CalibrationMode extends OpMode {
 
         // ── Diverter ──
         diverter = hardwareMap.get(Servo.class, "diverter");
-        diverter.setPosition(DIVERTER_LEFT); // default to left
+        diverter.setPosition(DIVERTER_LEFT);
 
         // ── Intake ──
         intake = hardwareMap.get(DcMotor.class, "intake");
@@ -170,14 +168,16 @@ public class CalibrationMode extends OpMode {
         }
 
         // ── Read buttons ──
-        boolean a        = gamepad1.a;
-        boolean b        = gamepad1.b;
-        boolean x        = gamepad1.x;
-        boolean y        = gamepad1.y;
-        boolean lb       = gamepad1.left_bumper;
-        boolean rb       = gamepad1.right_bumper;
-        boolean dpadDown = gamepad1.dpad_down;
-        boolean dpadUp   = gamepad1.dpad_up;
+        boolean a         = gamepad1.a;
+        boolean b         = gamepad1.b;
+        boolean x         = gamepad1.x;
+        boolean y         = gamepad1.y;
+        boolean lb        = gamepad1.left_bumper;
+        boolean rb        = gamepad1.right_bumper;
+        boolean dpadDown  = gamepad1.dpad_down;
+        boolean dpadUp    = gamepad1.dpad_up;
+        boolean dpadLeft  = gamepad1.dpad_left;
+        boolean dpadRight = gamepad1.dpad_right;
 
         // =========================================================
         // DRIVETRAIN
@@ -188,25 +188,34 @@ public class CalibrationMode extends OpMode {
         mecanumDrive(forward, strafe, rotate);
 
         // =========================================================
-        // FLYWHEEL TOGGLE  —  Left Trigger = toggle on/off
+        // RPM ADJUSTMENT  —  D-Pad Left = -100, D-Pad Right = +100
+        // =========================================================
+        if (dpadLeft && !lastDpadLeft) {
+            currentRPM = Math.max(RPM_MIN, currentRPM - RPM_STEP);
+            launcherTargetVelocity = currentRPM * 28.0 / 60.0;
+        }
+        if (dpadRight && !lastDpadRight) {
+            currentRPM = Math.min(RPM_MAX, currentRPM + RPM_STEP);
+            launcherTargetVelocity = currentRPM * 28.0 / 60.0;
+        }
+
+        // =========================================================
+        // FLYWHEEL TOGGLE  —  Left Trigger = start, Right Trigger = stop
         // =========================================================
         if (gamepad1.left_trigger > 0.5 && !flywheelsRunning) {
             flywheelsRunning = true;
             leftLauncher.setVelocity(launcherTargetVelocity);
             rightLauncher.setVelocity(launcherTargetVelocity);
         } else if (gamepad1.left_trigger <= 0.5 && flywheelsRunning) {
-            // Keep spinning — driver releases trigger to keep them on,
-            // use Right Trigger to kill
+            // Keep spinning — use Right Trigger to kill
         }
 
-        // Right trigger kills flywheels
         if (gamepad1.right_trigger > 0.5) {
             flywheelsRunning = false;
             leftLauncher.setVelocity(0);
             rightLauncher.setVelocity(0);
         }
 
-        // Keep velocity commanded while running
         if (flywheelsRunning) {
             leftLauncher.setVelocity(launcherTargetVelocity);
             rightLauncher.setVelocity(launcherTargetVelocity);
@@ -219,7 +228,6 @@ public class CalibrationMode extends OpMode {
             leftFeeding = true;
             leftFeeder.setPower(FULL_SPEED);
             leftFeederTimer.reset();
-            // Snapshot vision + RPM at the exact moment of fire
             if (limelight.hasTarget()) {
                 shotTxLog.add(tx);
                 shotDistLog.add(distance);
@@ -240,7 +248,6 @@ public class CalibrationMode extends OpMode {
             rightFeeding = true;
             rightFeeder.setPower(FULL_SPEED);
             rightFeederTimer.reset();
-            // Snapshot vision + RPM at the exact moment of fire
             if (limelight.hasTarget()) {
                 shotTxLog.add(tx);
                 shotDistLog.add(distance);
@@ -270,7 +277,6 @@ public class CalibrationMode extends OpMode {
             intake.setPower(intakeRunning ? 1.0 : 0.0);
         }
 
-        // Hold both bumpers to run intake in reverse (eject)
         if (gamepad1.left_bumper && gamepad1.right_bumper) {
             intake.setPower(-1.0);
         }
@@ -278,24 +284,16 @@ public class CalibrationMode extends OpMode {
         // =========================================================
         // CALIBRATION DATA RECORDING
         // =========================================================
-
-        // A = save BASE offset (center-aligned shot)
         if (a && !lastA && limelight.hasTarget()) {
             baseOffsets.add(tx);
             distances.add(distance);
         }
-
-        // B = save LEFT shooter offset
         if (b && !lastB && limelight.hasTarget()) {
             leftOffsets.add(tx);
         }
-
-        // X = save RIGHT shooter offset
         if (x && !lastX && limelight.hasTarget()) {
             rightOffsets.add(tx);
         }
-
-        // Y = clear all data
         if (y && !lastY) {
             baseOffsets.clear();
             leftOffsets.clear();
@@ -309,14 +307,16 @@ public class CalibrationMode extends OpMode {
         }
 
         // ── Edge detection update ──
-        lastA        = a;
-        lastB        = b;
-        lastX        = x;
-        lastY        = y;
-        lastLB       = lb;
-        lastRB       = rb;
-        lastDpadDown = dpadDown;
-        lastDpadUp   = dpadUp;
+        lastA         = a;
+        lastB         = b;
+        lastX         = x;
+        lastY         = y;
+        lastLB        = lb;
+        lastRB        = rb;
+        lastDpadDown  = dpadDown;
+        lastDpadUp    = dpadUp;
+        lastDpadLeft  = dpadLeft;
+        lastDpadRight = dpadRight;
 
         // =========================================================
         // CALCULATIONS
@@ -335,20 +335,20 @@ public class CalibrationMode extends OpMode {
         // TELEMETRY
         // =========================================================
         telemetry.addLine("======= LIVE DATA =======");
-        telemetry.addData("tx (degrees)",    String.format("%.3f", tx));
-        telemetry.addData("distance (cm)",   String.format("%.1f", distance));
-        telemetry.addData("Has Target",      limelight.hasTarget() ? "YES" : "NO");
-        telemetry.addData("Left RPM",        String.format("%.0f", leftRPM));
-        telemetry.addData("Right RPM",       String.format("%.0f", rightRPM));
-        telemetry.addData("RPM Target", String.format("%.0f", currentRPM));  // was RPM_TARGET
+        telemetry.addData("tx (degrees)",  String.format("%.3f", tx));
+        telemetry.addData("distance (cm)", String.format("%.1f", distance));
+        telemetry.addData("Has Target",    limelight.hasTarget() ? "YES" : "NO");
+        telemetry.addData("Left RPM",      String.format("%.0f", leftRPM));
+        telemetry.addData("Right RPM",     String.format("%.0f", rightRPM));
+        telemetry.addData("RPM Target",    String.format("%.0f", currentRPM));
 
         telemetry.addLine("");
         telemetry.addLine("======= STATES =======");
-        telemetry.addData("Flywheels",  flywheelsRunning ? "RUNNING" : "OFF");
-        telemetry.addData("Diverter",   diverterLeft     ? "LEFT"    : "RIGHT");
-        telemetry.addData("Intake",     intakeRunning    ? "ON"      : "OFF");
-        telemetry.addData("L Feeder",   leftFeeding      ? "FEEDING" : "idle");
-        telemetry.addData("R Feeder",   rightFeeding     ? "FEEDING" : "idle");
+        telemetry.addData("Flywheels", flywheelsRunning ? "RUNNING" : "OFF");
+        telemetry.addData("Diverter",  diverterLeft     ? "LEFT"    : "RIGHT");
+        telemetry.addData("Intake",    intakeRunning    ? "ON"      : "OFF");
+        telemetry.addData("L Feeder",  leftFeeding      ? "FEEDING" : "idle");
+        telemetry.addData("R Feeder",  rightFeeding     ? "FEEDING" : "idle");
 
         telemetry.addLine("");
         telemetry.addLine("======= RECORDED SAMPLES =======");
@@ -358,21 +358,19 @@ public class CalibrationMode extends OpMode {
 
         telemetry.addLine("");
         telemetry.addLine("======= RESULTS =======");
-        telemetry.addData("BASE_OFFSET",            String.format("%.4f", avgBase));
-        telemetry.addData("LEFT_SHOOTER_OFFSET",    String.format("%.4f", suggestedLeftOffset));
-        telemetry.addData("RIGHT_SHOOTER_OFFSET",   String.format("%.4f", suggestedRightOffset));
+        telemetry.addData("BASE_OFFSET",          String.format("%.4f", avgBase));
+        telemetry.addData("LEFT_SHOOTER_OFFSET",  String.format("%.4f", suggestedLeftOffset));
+        telemetry.addData("RIGHT_SHOOTER_OFFSET", String.format("%.4f", suggestedRightOffset));
 
-        // ── Shot log — show last 5 shots with full tx/distance/RPM snapshot ──
         telemetry.addLine("");
         telemetry.addLine("======= SHOT LOG (last 5) =======");
         telemetry.addData("Total Shots", shotTxLog.size());
         int logSize  = shotTxLog.size();
-        int showFrom = Math.max(0, logSize - 5); // show at most 5 most recent
+        int showFrom = Math.max(0, logSize - 5);
         for (int i = showFrom; i < logSize; i++) {
-            int shotNum = i + 1;
             telemetry.addLine(String.format(
                     "#%d [%s] tx=%.3f° dist=%.1fcm L=%.0f R=%.0f RPM",
-                    shotNum,
+                    i + 1,
                     shotSideLog.get(i),
                     shotTxLog.get(i),
                     shotDistLog.get(i),

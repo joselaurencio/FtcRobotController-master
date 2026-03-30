@@ -26,22 +26,23 @@ public class CalibrationMode extends OpMode {
     private Servo     diverter;
 
     // ===== INTAKE =====
-    private DcMotor intake;
+    private DcMotor intake1;   // spins FORWARD  for intake-in
+    private DcMotor intake2;   // spins REVERSE  for intake-in (opposite roller)
 
     // ===== VISION =====
     private LimelightVision limelight;
 
     // ===== SHOOTER CONSTANTS =====
-    private static final double RPM_STEP         = 10;
-    private static final double RPM_MIN          = 500;
-    private static final double RPM_MAX          = 6000;
-    private static final double PIDF_P           = 300;
-    private static final double PIDF_F           = 10;
-    private static final double FEED_TIME_SEC    = 2008;
-    private static final double FULL_SPEED       = 1.0;
-    private static final double STOP_SPEED       = 0.0;
-    private static final double DIVERTER_LEFT    = 0.2962;
-    private static final double DIVERTER_RIGHT   = 0.0;
+    private static final double RPM_STEP      = 10;
+    private static final double RPM_MIN       = 500;
+    private static final double RPM_MAX       = 6000;
+    private static final double PIDF_P        = 300;
+    private static final double PIDF_F        = 10;
+    private static final double FEED_TIME_SEC = 2008;
+    private static final double FULL_SPEED    = 1.0;
+    private static final double STOP_SPEED    = 0.0;
+    private static final double DIVERTER_LEFT  = 0.2962;
+    private static final double DIVERTER_RIGHT = 0.0;
 
     private double currentRPM             = 3700;
     private double launcherTargetVelocity = currentRPM * 28.0 / 60.0;
@@ -49,15 +50,19 @@ public class CalibrationMode extends OpMode {
     // ===== FEEDER TIMER =====
     private ElapsedTime leftFeederTimer  = new ElapsedTime();
     private ElapsedTime rightFeederTimer = new ElapsedTime();
-    private boolean leftFeeding   = false;
-    private boolean rightFeeding  = false;
+    private boolean leftFeeding  = false;
+    private boolean rightFeeding = false;
 
     // ===== SHOOTER STATE =====
     private boolean flywheelsRunning = false;
     private boolean diverterLeft     = true;
 
     // ===== INTAKE STATE =====
-    private boolean intakeRunning = false;
+    // ON      = both motors rolling inward
+    // OFF     = both motors stopped
+    // REVERSE = both motors rolling outward (eject)
+    private enum IntakeState { ON, OFF, REVERSE }
+    private IntakeState intakeState = IntakeState.OFF;
 
     // ===== DATA STORAGE =====
     ArrayList<Double> baseOffsets  = new ArrayList<>();
@@ -139,9 +144,15 @@ public class CalibrationMode extends OpMode {
         diverter.setPosition(DIVERTER_LEFT);
 
         // ── Intake ──
-        intake = hardwareMap.get(DcMotor.class, "intake");
-        intake.setDirection(DcMotorSimple.Direction.REVERSE);
-        intake.setPower(0);
+        // Both set FORWARD here; setIntakePower() applies opposite signs
+        // so the rollers pull inward together.
+        intake1 = hardwareMap.get(DcMotor.class, "intake1");
+        intake2 = hardwareMap.get(DcMotor.class, "intake2");
+
+        intake1.setDirection(DcMotorSimple.Direction.FORWARD);
+        intake2.setDirection(DcMotorSimple.Direction.FORWARD);
+
+        setIntakePower(0);
 
         // ── Vision ──
         limelight = new LimelightVision(hardwareMap);
@@ -188,7 +199,7 @@ public class CalibrationMode extends OpMode {
         mecanumDrive(forward, strafe, rotate);
 
         // =========================================================
-        // RPM ADJUSTMENT  —  D-Pad Left = -100, D-Pad Right = +100
+        // RPM ADJUSTMENT  —  D-Pad Left = -10, D-Pad Right = +10
         // =========================================================
         if (dpadLeft && !lastDpadLeft) {
             currentRPM = Math.max(RPM_MIN, currentRPM - RPM_STEP);
@@ -200,22 +211,16 @@ public class CalibrationMode extends OpMode {
         }
 
         // =========================================================
-        // FLYWHEEL TOGGLE  —  Left Trigger = start, Right Trigger = stop
+        // FLYWHEEL  —  Left Trigger = start, Right Trigger = stop
         // =========================================================
         if (gamepad1.left_trigger > 0.5 && !flywheelsRunning) {
             flywheelsRunning = true;
-            leftLauncher.setVelocity(launcherTargetVelocity);
-            rightLauncher.setVelocity(launcherTargetVelocity);
-        } else if (gamepad1.left_trigger <= 0.5 && flywheelsRunning) {
-            // Keep spinning — use Right Trigger to kill
         }
-
         if (gamepad1.right_trigger > 0.5) {
             flywheelsRunning = false;
             leftLauncher.setVelocity(0);
             rightLauncher.setVelocity(0);
         }
-
         if (flywheelsRunning) {
             leftLauncher.setVelocity(launcherTargetVelocity);
             rightLauncher.setVelocity(launcherTargetVelocity);
@@ -270,15 +275,33 @@ public class CalibrationMode extends OpMode {
         }
 
         // =========================================================
-        // INTAKE  —  D-Pad Up = toggle forward | Both Bumpers = reverse
+        // INTAKE
+        // D-Pad Up          = toggle intake IN (both motors inward)
+        // Both Bumpers held = REVERSE / eject (both motors outward)
+        //
+        // Both-bumper eject takes priority over the toggle state so
+        // the driver can clear a jam at any time without losing their
+        // ON/OFF setting — releasing bumpers returns to prior state.
         // =========================================================
-        if (dpadUp && !lastDpadUp) {
-            intakeRunning = !intakeRunning;
-            intake.setPower(intakeRunning ? 1.0 : 0.0);
-        }
-
-        if (gamepad1.left_bumper && gamepad1.right_bumper) {
-            intake.setPower(-1.0);
+        if (lb && rb) {
+            // Both bumpers held — force eject regardless of toggle state
+            setIntakePower(-1.0);
+        } else if (dpadUp && !lastDpadUp) {
+            // Toggle intake IN / OFF
+            if (intakeState == IntakeState.ON) {
+                intakeState = IntakeState.OFF;
+                setIntakePower(0);
+            } else {
+                intakeState = IntakeState.ON;
+                setIntakePower(1.0);
+            }
+        } else if (!lb && !rb) {
+            // No bumpers held — restore whatever the toggle says
+            switch (intakeState) {
+                case ON:      setIntakePower( 1.0); break;
+                case REVERSE: setIntakePower(-1.0); break;
+                case OFF:     setIntakePower( 0.0); break;
+            }
         }
 
         // =========================================================
@@ -346,7 +369,7 @@ public class CalibrationMode extends OpMode {
         telemetry.addLine("======= STATES =======");
         telemetry.addData("Flywheels", flywheelsRunning ? "RUNNING" : "OFF");
         telemetry.addData("Diverter",  diverterLeft     ? "LEFT"    : "RIGHT");
-        telemetry.addData("Intake",    intakeRunning    ? "ON"      : "OFF");
+        telemetry.addData("Intake",    intakeState);
         telemetry.addData("L Feeder",  leftFeeding      ? "FEEDING" : "idle");
         telemetry.addData("R Feeder",  rightFeeding     ? "FEEDING" : "idle");
 
@@ -386,9 +409,9 @@ public class CalibrationMode extends OpMode {
         telemetry.addLine("Right Stick      = Rotate");
         telemetry.addLine("Left Trigger     = Start Flywheels");
         telemetry.addLine("Right Trigger    = Stop Flywheels");
-        telemetry.addLine("D-Pad LEFT       = RPM - 100");
-        telemetry.addLine("D-Pad RIGHT      = RPM + 100");
-        telemetry.addLine("D-Pad Up         = Toggle Intake");
+        telemetry.addLine("D-Pad LEFT       = RPM - 10");
+        telemetry.addLine("D-Pad RIGHT      = RPM + 10");
+        telemetry.addLine("D-Pad Up         = Toggle Intake IN/OFF");
         telemetry.addLine("D-Pad Down       = Toggle Diverter");
         telemetry.addLine("Left Bumper      = Fire LEFT feeder + log shot");
         telemetry.addLine("Right Bumper     = Fire RIGHT feeder + log shot");
@@ -399,6 +422,21 @@ public class CalibrationMode extends OpMode {
         telemetry.addLine("Y                = Clear ALL data + shot log");
 
         telemetry.update();
+    }
+
+    // =========================================================
+    // INTAKE HELPER
+    // =========================================================
+    // intake1 and intake2 face opposite directions physically,
+    // so passing opposite power values makes them both roll inward.
+    //
+    //   power =  1.0 → intake IN  (intake1 forward, intake2 backward)
+    //   power = -1.0 → intake OUT (intake1 backward, intake2 forward)
+    //   power =  0.0 → stop both
+    // =========================================================
+    private void setIntakePower(double power) {
+        intake1.setPower( power);
+        intake2.setPower(-power);
     }
 
     // =========================================================
@@ -432,6 +470,6 @@ public class CalibrationMode extends OpMode {
         rightLauncher.setVelocity(0);
         leftFeeder.setPower(STOP_SPEED);
         rightFeeder.setPower(STOP_SPEED);
-        intake.setPower(0);
+        setIntakePower(0);
     }
 }

@@ -67,7 +67,8 @@ public class ri3dStarterCode extends OpMode {
     private DcMotor   rightBackDrive  = null;
     private DcMotorEx leftLauncher    = null;
     private DcMotorEx rightLauncher   = null;
-    private DcMotor   intake          = null;
+    private DcMotor   intake1          = null;
+    private DcMotor   intake2          = null;
     private CRServo   leftFeeder      = null;
     private CRServo   rightFeeder     = null;
     private Servo     diverter        = null;
@@ -116,7 +117,13 @@ public class ri3dStarterCode extends OpMode {
     private enum DiverterDirection { LEFT, RIGHT }
     private DiverterDirection diverterDirection = DiverterDirection.LEFT;
 
-    private enum IntakeState { ON, OFF }
+    // =========================================================
+    // INTAKE STATE
+    // ON  = both motors running inward (intake1 FORWARD, intake2 REVERSE)
+    // OFF = both motors stopped
+    // REVERSE = both motors running outward (intake1 REVERSE, intake2 FORWARD)
+    // =========================================================
+    private enum IntakeState { ON, OFF, REVERSE }
     private IntakeState intakeState = IntakeState.OFF;
 
     private enum ShooterMode { MANUAL, VISION }
@@ -144,7 +151,8 @@ public class ri3dStarterCode extends OpMode {
         rightBackDrive  = hardwareMap.get(DcMotor.class,   "right_back_drive");
         leftLauncher    = hardwareMap.get(DcMotorEx.class, "left_launcher");
         rightLauncher   = hardwareMap.get(DcMotorEx.class, "right_launcher");
-        intake          = hardwareMap.get(DcMotor.class,   "intake");
+        intake1         = hardwareMap.get(DcMotor.class,   "intake1");
+        intake2         = hardwareMap.get(DcMotor.class,   "intake2");
         leftFeeder      = hardwareMap.get(CRServo.class,   "left_feeder");
         rightFeeder     = hardwareMap.get(CRServo.class,   "right_feeder");
         diverter        = hardwareMap.get(Servo.class,     "diverter");
@@ -159,7 +167,11 @@ public class ri3dStarterCode extends OpMode {
         leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
         rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
 
-        intake.setDirection(DcMotorSimple.Direction.REVERSE);
+        // intake1 and intake2 face opposite directions physically,
+        // so setting them both FORWARD here and passing opposite
+        // power values in setIntakePower() makes them roll inward together.
+        intake1.setDirection(DcMotorSimple.Direction.FORWARD);
+        intake2.setDirection(DcMotorSimple.Direction.FORWARD);
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -261,30 +273,27 @@ public class ri3dStarterCode extends OpMode {
             }
         }
 
-        // ===== Intake toggle (A = forward, X = reverse) =====
+        // ===== Intake toggle =====
+        // A = toggle intake IN (both motors roll inward)
+        // X = toggle intake REVERSE (both motors roll outward)
+        // Pressing A while reversing (or X while running) switches cleanly.
         if (gamepad1.aWasPressed()) {
-            switch (intakeState) {
-                case ON:
-                    intakeState = IntakeState.OFF;
-                    intake.setPower(0);
-                    break;
-                case OFF:
-                    intakeState = IntakeState.ON;
-                    intake.setPower(1);
-                    break;
+            if (intakeState == IntakeState.ON) {
+                intakeState = IntakeState.OFF;
+                setIntakePower(0);
+            } else {
+                intakeState = IntakeState.ON;
+                setIntakePower(1);
             }
         }
 
         if (gamepad1.xWasPressed()) {
-            switch (intakeState) {
-                case ON:
-                    intakeState = IntakeState.OFF;
-                    intake.setPower(-1);
-                    break;
-                case OFF:
-                    intakeState = IntakeState.ON;
-                    intake.setPower(0);
-                    break;
+            if (intakeState == IntakeState.REVERSE) {
+                intakeState = IntakeState.OFF;
+                setIntakePower(0);
+            } else {
+                intakeState = IntakeState.REVERSE;
+                setIntakePower(-1);
             }
         }
 
@@ -348,6 +357,20 @@ public class ri3dStarterCode extends OpMode {
     @Override
     public void stop() {}
 
+    // =========================================================
+    // INTAKE HELPER
+    // =========================================================
+    // Drives both intake motors simultaneously in opposite directions
+    // so their rollers both pull inward (or push outward when reversed).
+    //
+    //   power =  1.0 → intake IN  (intake1 forward, intake2 backward)
+    //   power = -1.0 → intake OUT (intake1 backward, intake2 forward)
+    //   power =  0.0 → stop both
+    // =========================================================
+    private void setIntakePower(double power) {
+        intake1.setPower( power);
+        intake2.setPower(-power);
+    }
     // =========================================================
     // MECANUM DRIVE
     // =========================================================

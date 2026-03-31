@@ -69,9 +69,12 @@ public class ri3dStarterCode extends OpMode {
 
         leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
         rightFrontDrive.setDirection(DcMotor.Direction.REVERSE);
+        intake1.setDirection(DcMotor.Direction.FORWARD);
+        intake2.setDirection(DcMotor.Direction.REVERSE);
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
 
         leftLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
                 new PIDFCoefficients(300,0,0,10));
@@ -88,9 +91,9 @@ public class ri3dStarterCode extends OpMode {
         limelight.update();
 
         // ===== DRIVE =====
-        double f = gamepad2.left_stick_y;
-        double s = -gamepad2.left_stick_x;
-        double r = -gamepad2.right_stick_x;
+        double f = -gamepad2.left_stick_y;
+        double s = gamepad2.left_stick_x;
+        double r = gamepad2.right_stick_x;
         mecanumDrive(f,s,r);
 
         // ===== SHOOTER TARGET =====

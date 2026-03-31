@@ -26,8 +26,11 @@ public class CalibrationMode extends OpMode {
     private Servo     diverter;
 
     // ===== INTAKE =====
-    private DcMotor intake1;   // spins FORWARD  for intake-in
-    private DcMotor intake2;   // spins REVERSE  for intake-in (opposite roller)
+    // intake1 and intake2 face opposite directions physically.
+    // Both are set REVERSE here; setIntakePower() applies opposite
+    // signs so the rollers pull inward together.
+    private DcMotorEx intake1;   // encoder-controlled
+    private DcMotorEx intake2;   // encoder-controlled, spins opposite to intake1
 
     // ===== VISION =====
     private LimelightVision limelight;
@@ -41,11 +44,23 @@ public class CalibrationMode extends OpMode {
     private static final double FEED_TIME_SEC = 2008;
     private static final double FULL_SPEED    = 1.0;
     private static final double STOP_SPEED    = 0.0;
-    private static final double DIVERTER_LEFT  = 0.2962;
+    private static final double DIVERTER_LEFT  = .4;
     private static final double DIVERTER_RIGHT = 0.0;
 
-    private double currentRPM             = 3700;
+    private double currentRPM             = 3000;
     private double launcherTargetVelocity = currentRPM * 28.0 / 60.0;
+
+    // ===== INTAKE RPM =====
+    // Tune INTAKE_RPM to whatever speed pulls game elements cleanly.
+    // INTAKE_TICKS_PER_REV should match your motor — default is 28
+    // (bare REV HD Hex / Core Hex shaft encoder). Change if different.
+    // setIntakePower() converts RPM → ticks/sec and calls setVelocity(),
+    // so the intake holds speed under load just like the launchers.
+    private static final double INTAKE_TICKS_PER_REV = 146.44;
+    private static final double INTAKE_PIDF_P        = 10.0;  // tune if intake hunts
+    private static final double INTAKE_PIDF_F        = 1.0;   // tune for feedforward
+    private double intakeRPM             = 2000;  // target RPM — adjust as needed
+    private double intakeTargetVelocity  = intakeRPM * INTAKE_TICKS_PER_REV / 60.0;
 
     // ===== FEEDER TIMER =====
     private ElapsedTime leftFeederTimer  = new ElapsedTime();
@@ -58,9 +73,9 @@ public class CalibrationMode extends OpMode {
     private boolean diverterLeft     = true;
 
     // ===== INTAKE STATE =====
-    // ON      = both motors rolling inward
+    // ON      = both motors rolling inward at intakeRPM
     // OFF     = both motors stopped
-    // REVERSE = both motors rolling outward (eject)
+    // REVERSE = both motors rolling outward at intakeRPM (eject)
     private enum IntakeState { ON, OFF, REVERSE }
     private IntakeState intakeState = IntakeState.OFF;
 
@@ -144,15 +159,26 @@ public class CalibrationMode extends OpMode {
         diverter.setPosition(DIVERTER_LEFT);
 
         // ── Intake ──
-        // Both set FORWARD here; setIntakePower() applies opposite signs
-        // so the rollers pull inward together.
-        intake1 = hardwareMap.get(DcMotor.class, "intake1");
-        intake2 = hardwareMap.get(DcMotor.class, "intake2");
+        intake1 = hardwareMap.get(DcMotorEx.class, "intake1");
+        intake2 = hardwareMap.get(DcMotorEx.class, "intake2");
 
-        intake1.setDirection(DcMotorSimple.Direction.FORWARD);
+        // Your original directions — both REVERSE in hardware config;
+        // setIntakePower() flips the sign on intake2 so they roll inward together.
+        intake1.setDirection(DcMotorSimple.Direction.REVERSE);
         intake2.setDirection(DcMotorSimple.Direction.FORWARD);
 
-        setIntakePower(0);
+        intake1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        intake2.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+
+        intake1.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        intake2.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+
+        intake1.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(INTAKE_PIDF_P, 0, 0, INTAKE_PIDF_F));
+        intake2.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(INTAKE_PIDF_P, 0, 0, INTAKE_PIDF_F));
+
+        setIntakeVelocity(0);
 
         // ── Vision ──
         limelight = new LimelightVision(hardwareMap);
@@ -276,31 +302,24 @@ public class CalibrationMode extends OpMode {
 
         // =========================================================
         // INTAKE
-        // D-Pad Up          = toggle intake IN (both motors inward)
-        // Both Bumpers held = REVERSE / eject (both motors outward)
-        //
-        // Both-bumper eject takes priority over the toggle state so
-        // the driver can clear a jam at any time without losing their
-        // ON/OFF setting — releasing bumpers returns to prior state.
+        // D-Pad Up          = toggle intake IN / OFF
+        // Both Bumpers held = REVERSE / eject
         // =========================================================
         if (lb && rb) {
-            // Both bumpers held — force eject regardless of toggle state
-            setIntakePower(-1.0);
+            setIntakeVelocity(-intakeTargetVelocity);
         } else if (dpadUp && !lastDpadUp) {
-            // Toggle intake IN / OFF
             if (intakeState == IntakeState.ON) {
                 intakeState = IntakeState.OFF;
-                setIntakePower(0);
+                setIntakeVelocity(0);
             } else {
                 intakeState = IntakeState.ON;
-                setIntakePower(1.0);
+                setIntakeVelocity(intakeTargetVelocity);
             }
         } else if (!lb && !rb) {
-            // No bumpers held — restore whatever the toggle says
             switch (intakeState) {
-                case ON:      setIntakePower( 1.0); break;
-                case REVERSE: setIntakePower(-1.0); break;
-                case OFF:     setIntakePower( 0.0); break;
+                case ON:      setIntakeVelocity( intakeTargetVelocity); break;
+                case REVERSE: setIntakeVelocity(-intakeTargetVelocity); break;
+                case OFF:     setIntakeVelocity(0);                     break;
             }
         }
 
@@ -351,19 +370,24 @@ public class CalibrationMode extends OpMode {
         double suggestedLeftOffset  = avgBase - avgLeft;
         double suggestedRightOffset = avgRight - avgBase;
 
-        double leftRPM  = leftLauncher.getVelocity()  * 60.0 / 28.0;
-        double rightRPM = rightLauncher.getVelocity() * 60.0 / 28.0;
+        double leftRPM   = leftLauncher.getVelocity()  * 60.0 / 28.0;
+        double rightRPM  = rightLauncher.getVelocity() * 60.0 / 28.0;
+        double intake1RPM = intake1.getVelocity() * 60.0 / INTAKE_TICKS_PER_REV;
+        double intake2RPM = intake2.getVelocity() * 60.0 / INTAKE_TICKS_PER_REV;
 
         // =========================================================
         // TELEMETRY
         // =========================================================
         telemetry.addLine("======= LIVE DATA =======");
-        telemetry.addData("tx (degrees)",  String.format("%.3f", tx));
-        telemetry.addData("distance (cm)", String.format("%.1f", distance));
-        telemetry.addData("Has Target",    limelight.hasTarget() ? "YES" : "NO");
-        telemetry.addData("Left RPM",      String.format("%.0f", leftRPM));
-        telemetry.addData("Right RPM",     String.format("%.0f", rightRPM));
-        telemetry.addData("RPM Target",    String.format("%.0f", currentRPM));
+        telemetry.addData("tx (degrees)",   String.format("%.3f", tx));
+        telemetry.addData("distance (cm)",  String.format("%.1f", distance));
+        telemetry.addData("Has Target",     limelight.hasTarget() ? "YES" : "NO");
+        telemetry.addData("Left RPM",       String.format("%.0f", leftRPM));
+        telemetry.addData("Right RPM",      String.format("%.0f", rightRPM));
+        telemetry.addData("RPM Target",     String.format("%.0f", currentRPM));
+        telemetry.addData("Intake1 RPM",    String.format("%.0f", intake1RPM));
+        telemetry.addData("Intake2 RPM",    String.format("%.0f", intake2RPM));
+        telemetry.addData("Intake RPM Tgt", String.format("%.0f", intakeRPM));
 
         telemetry.addLine("");
         telemetry.addLine("======= STATES =======");
@@ -427,16 +451,19 @@ public class CalibrationMode extends OpMode {
     // =========================================================
     // INTAKE HELPER
     // =========================================================
-    // intake1 and intake2 face opposite directions physically,
-    // so passing opposite power values makes them both roll inward.
+    // Drives both intake motors at the target velocity in opposite
+    // directions so their rollers pull inward together.
     //
-    //   power =  1.0 → intake IN  (intake1 forward, intake2 backward)
-    //   power = -1.0 → intake OUT (intake1 backward, intake2 forward)
-    //   power =  0.0 → stop both
+    //   velocity > 0 → intake IN
+    //   velocity < 0 → intake OUT (eject)
+    //   velocity = 0 → stop both
+    //
+    // intake2 receives the negated value because it faces the
+    // opposite direction physically.
     // =========================================================
-    private void setIntakePower(double power) {
-        intake1.setPower( power);
-        intake2.setPower(-power);
+    private void setIntakeVelocity(double velocity) {
+        intake1.setVelocity( velocity);
+        intake2.setVelocity(-velocity);
     }
 
     // =========================================================
@@ -470,6 +497,6 @@ public class CalibrationMode extends OpMode {
         rightLauncher.setVelocity(0);
         leftFeeder.setPower(STOP_SPEED);
         rightFeeder.setPower(STOP_SPEED);
-        setIntakePower(0);
+        setIntakeVelocity(0);
     }
 }

@@ -2,32 +2,50 @@ package org.firstinspires.ftc.teamcode.math;
 
 public class ShooterModel {
 
-    // Constants grounded in the paper's physical parameters
+    // ===== PHYSICS CONSTANTS (UNCHANGED) =====
     private static final double g = 9.81;
-    private static final double theta = Math.toRadians(48); // Launch angle
-    private static final double wheelRadius = 0.196;       // Flywheel radius
-
-    // Consolidated Efficiency Factor (η)
-    // Accounts for slip, compression, and momentum transfer
+    private static final double theta = Math.toRadians(48);
+    private static final double wheelRadius = 0.196;
     private static final double eta = 0.550;
 
     private static final double shooterHeight = 0.43;
     private static final double targetHeight = 1.1;
 
+    // ===== SWITCH BETWEEN MODELS =====
     private static final boolean USE_LINEAR_MODEL = true;
 
-    public static double distanceToRPM(double d) {
+    // ===== YOUR NEW REGRESSIONS =====
+    // LEFT SHOOTER
+    private static final double LEFT_M = 6.23098;
+    private static final double LEFT_B = 2226.76324;
 
-        // d is in CENTIMETERS
+    // RIGHT SHOOTER
+    private static final double RIGHT_M = 6.70697;
+    private static final double RIGHT_B = 1997.40165;
+
+    /**
+     * Returns RPM based on distance and which shooter is being used
+     * @param d distance in CM
+     * @param isLeftShooter true = left shooter, false = right shooter
+     */
+    public static double distanceToRPM(double d, boolean isLeftShooter) {
 
         if (USE_LINEAR_MODEL) {
-            // Linear regression: RPM = 3.67626 * distance + 1746.15732
-            double rpm = 3.67626 * d + 1746.15732;
+
+            double rpm;
+
+            if (isLeftShooter) {
+                // ===== LEFT MODEL =====
+                rpm = LEFT_M * d + LEFT_B;
+            } else {
+                // ===== RIGHT MODEL =====
+                rpm = RIGHT_M * d + RIGHT_B;
+            }
 
             return Math.max(rpm, 0);
         }
 
-        // ===== ORIGINAL PHYSICS MODEL =====
+        // ===== PHYSICS MODEL (FALLBACK) =====
 
         double meters = d / 100.0;
 

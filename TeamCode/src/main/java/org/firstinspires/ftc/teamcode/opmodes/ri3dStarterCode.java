@@ -4,653 +4,253 @@ import static com.qualcomm.robotcore.hardware.DcMotor.ZeroPowerBehavior.BRAKE;
 
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.qualcomm.robotcore.hardware.CRServo;
-import com.qualcomm.robotcore.hardware.DcMotor;
-import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
-import com.qualcomm.robotcore.hardware.PIDFCoefficients;
-import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.hardware.*;
 import com.qualcomm.robotcore.util.ElapsedTime;
+
 import org.firstinspires.ftc.teamcode.vision.LimelightVision;
 import org.firstinspires.ftc.teamcode.math.ShooterModel;
-import org.firstinspires.ftc.teamcode.subsystems.Shooter;
 
-@TeleOp(name = "DECODE Ri3D", group = "StarterBot")
-//@Disabled
+@TeleOp(name = "Ri3D FINAL FIXED", group = "Comp")
 public class ri3dStarterCode extends OpMode {
 
-    // ================= AUTO ALIGN PD =================
-    private double kP_align = .08;
-    private double kD_align = 0.003;
+    // ================= ALIGN PD =================
+    private double kP_align = 0.06;
+    private double kD_align = 0.002;
     private double previousAlignError = 0;
 
-    private final double ALIGN_DEADBAND  = 0.2;
-    private final double MAX_ALIGN_POWER = 0.7;
-    // ==================================================
+    private final double ALIGN_DEADBAND  = 0.15;
+    private final double MAX_ALIGN_POWER = 0.5;
 
-    // ================= DYNAMIC OFFSET TUNING =================
-    private final double BASE_OFFSET     = -3.0;
-    private final double DISTANCE_FACTOR =  0.002;
-    private final double SHOOTER_OFFSET  =  .1;
-    // =========================================================
+    // ================= SHOOTER =================
+    private double launcherTargetTPS = 0;
+    private double launcherMin = 0;
+    private boolean useLeftModel = true;
 
-    final double FEED_TIME_SECONDS = 1.5;
-    final double STOP_SPEED        = 0.0;
-    final double FULL_SPEED        = 1.0;
+    final double FEED_TIME_SECONDS = 1.2;
 
-    final double RPM_CLOSE_TARGET = 2000;
-    final double RPM_CLOSE_MIN    = 1900;
-
-    final double LAUNCHER_CLOSE_TARGET_VELOCITY = RPM_CLOSE_TARGET * 28 / 60.0;
-    final double LAUNCHER_CLOSE_MIN_VELOCITY    = RPM_CLOSE_MIN    * 28 / 60.0;
-
-    final double RPM_FAR_TARGET = 3200;
-    final double RPM_FAR_MIN    = 3000;
-
-    final double LAUNCHER_FAR_TARGET_VELOCITY = RPM_FAR_TARGET * 28 / 60.0;
-    final double LAUNCHER_FAR_MIN_VELOCITY    = RPM_FAR_MIN    * 28 / 60.0;
-
-    double launcherTarget = LAUNCHER_CLOSE_TARGET_VELOCITY;
-    double launcherMin    = LAUNCHER_CLOSE_MIN_VELOCITY;
-
-    final double LEFT_POSITION  = 0.2962;
-    final double RIGHT_POSITION = 0;
-
-    private boolean lastBack   = false;
-    private boolean lastGP2RB  = false;   // edge detect for GP2 right bumper (manual left shot)
-    private boolean lastGP2LB  = false;   // edge detect for GP2 left  bumper (manual right shot)
-
-    // ===== Hardware =====
-    private DcMotor   leftFrontDrive  = null;
-    private DcMotor   rightFrontDrive = null;
-    private DcMotor   leftBackDrive   = null;
-    private DcMotor   rightBackDrive  = null;
-    private DcMotorEx leftLauncher    = null;
-    private DcMotorEx rightLauncher   = null;
-    private DcMotor   intake1          = null;
-    private DcMotor   intake2          = null;
-    private CRServo   leftFeeder      = null;
-    private CRServo   rightFeeder     = null;
-    private Servo     diverter        = null;
+    // ================= HARDWARE =================
+    private DcMotor leftFrontDrive, rightFrontDrive, leftBackDrive, rightBackDrive;
+    private DcMotorEx leftLauncher, rightLauncher;
+    private DcMotor intake1, intake2;
+    private CRServo leftFeeder, rightFeeder;
+    private Servo diverter;
 
     private LimelightVision limelight;
 
-    ElapsedTime leftFeederTimer        = new ElapsedTime();
-    ElapsedTime rightFeederTimer       = new ElapsedTime();
+    ElapsedTime leftTimer = new ElapsedTime();
+    ElapsedTime rightTimer = new ElapsedTime();
 
-    // ===== State Enums =====
+    // ================= STATES =================
+    private enum LaunchState { IDLE, ALIGN, SPIN_UP, LAUNCH, LAUNCHING }
+    private LaunchState leftState = LaunchState.IDLE;
+    private LaunchState rightState = LaunchState.IDLE;
 
-    private enum LaunchState {
-        IDLE,
-        ALIGN,
-        SPIN_UP,
-        LAUNCH,
-        LAUNCHING,
-    }
-    private LaunchState leftLaunchState;
-    private LaunchState rightLaunchState;
-
-    // =========================================================
-    // MANUAL (NO-ALIGN) STATE MACHINE
-    // =========================================================
-    // Mirrors LaunchState but skips ALIGN entirely.
-    // Used for GP2 bumper fallback shots — great for lookup table
-    // data collection and shooter verification without vision.
-    //
-    //   GP2 RIGHT BUMPER → manual LEFT  shot (spin up left launcher,  fire left  feeder)
-    //   GP2 LEFT  BUMPER → manual RIGHT shot (spin up right launcher, fire right feeder)
-    //
-    // The velocity target is read from Limelight distance → ShooterModel
-    // at the moment the button is pressed (same formula as VISION mode),
-    // so you get real distance-based data even without alignment.
-    // If Limelight has no target, it falls back to launcherTarget.
-    // =========================================================
-    private enum ManualLaunchState { IDLE, SPIN_UP, LAUNCH, LAUNCHING }
-    private ManualLaunchState manualLeftState  = ManualLaunchState.IDLE;
-    private ManualLaunchState manualRightState = ManualLaunchState.IDLE;
-
-    // Velocity snapshot taken when the manual shot is triggered.
-    // Stored separately so a Limelight dropout mid-shot doesn't change the speed.
-    private double manualLeftTarget  = 0;
-    private double manualRightTarget = 0;
-
-    private enum DiverterDirection { LEFT, RIGHT }
-    private DiverterDirection diverterDirection = DiverterDirection.LEFT;
-
-    // =========================================================
-    // INTAKE STATE
-    // ON  = both motors running inward (intake1 FORWARD, intake2 REVERSE)
-    // OFF = both motors stopped
-    // REVERSE = both motors running outward (intake1 REVERSE, intake2 FORWARD)
-    // =========================================================
-    private enum IntakeState { ON, OFF, REVERSE }
-    private IntakeState intakeState = IntakeState.OFF;
-
-    private enum ShooterMode { MANUAL, VISION }
-    private ShooterMode shooterMode = ShooterMode.VISION;
-
-    private enum LauncherDistance { CLOSE, FAR }
-    private LauncherDistance launcherDistance = LauncherDistance.CLOSE;
-
-    double leftFrontPower;
-    double rightFrontPower;
-    double leftBackPower;
-    double rightBackPower;
-
-    // =========================================================
-    // INIT
-    // =========================================================
+    // ================= INIT =================
     @Override
     public void init() {
-        leftLaunchState  = LaunchState.IDLE;
-        rightLaunchState = LaunchState.IDLE;
 
-        leftFrontDrive  = hardwareMap.get(DcMotor.class,   "left_front_drive");
-        rightFrontDrive = hardwareMap.get(DcMotor.class,   "right_front_drive");
-        leftBackDrive   = hardwareMap.get(DcMotor.class,   "left_back_drive");
-        rightBackDrive  = hardwareMap.get(DcMotor.class,   "right_back_drive");
-        leftLauncher    = hardwareMap.get(DcMotorEx.class, "left_launcher");
-        rightLauncher   = hardwareMap.get(DcMotorEx.class, "right_launcher");
-        intake1         = hardwareMap.get(DcMotor.class,   "intake1");
-        intake2         = hardwareMap.get(DcMotor.class,   "intake2");
-        leftFeeder      = hardwareMap.get(CRServo.class,   "left_feeder");
-        rightFeeder     = hardwareMap.get(CRServo.class,   "right_feeder");
-        diverter        = hardwareMap.get(Servo.class,     "diverter");
+        leftFrontDrive  = hardwareMap.get(DcMotor.class, "left_front_drive");
+        rightFrontDrive = hardwareMap.get(DcMotor.class, "right_front_drive");
+        leftBackDrive   = hardwareMap.get(DcMotor.class, "left_back_drive");
+        rightBackDrive  = hardwareMap.get(DcMotor.class, "right_back_drive");
+
+        leftLauncher  = hardwareMap.get(DcMotorEx.class, "left_launcher");
+        rightLauncher = hardwareMap.get(DcMotorEx.class, "right_launcher");
+
+        intake1 = hardwareMap.get(DcMotor.class, "intake1");
+        intake2 = hardwareMap.get(DcMotor.class, "intake2");
+
+        leftFeeder  = hardwareMap.get(CRServo.class, "left_feeder");
+        rightFeeder = hardwareMap.get(CRServo.class, "right_feeder");
+
+        diverter = hardwareMap.get(Servo.class, "diverter");
 
         limelight = new LimelightVision(hardwareMap);
 
         leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
         rightFrontDrive.setDirection(DcMotor.Direction.REVERSE);
-        leftBackDrive.setDirection(DcMotor.Direction.FORWARD);
-        rightBackDrive.setDirection(DcMotor.Direction.FORWARD);
-
-        leftLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-        rightLauncher.setDirection(DcMotorSimple.Direction.FORWARD);
-
-        // intake1 and intake2 face opposite directions physically,
-        // so setting them both FORWARD here and passing opposite
-        // power values in setIntakePower() makes them roll inward together.
-        intake1.setDirection(DcMotorSimple.Direction.FORWARD);
-        intake2.setDirection(DcMotorSimple.Direction.FORWARD);
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-        leftFrontDrive.setZeroPowerBehavior(BRAKE);
-        rightFrontDrive.setZeroPowerBehavior(BRAKE);
-        leftBackDrive.setZeroPowerBehavior(BRAKE);
-        rightBackDrive.setZeroPowerBehavior(BRAKE);
-        leftLauncher.setZeroPowerBehavior(BRAKE);
-        rightLauncher.setZeroPowerBehavior(BRAKE);
-
-        leftFeeder.setPower(STOP_SPEED);
-        rightFeeder.setPower(STOP_SPEED);
-
         leftLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
-                new PIDFCoefficients(300, 0, 0, 10));
+                new PIDFCoefficients(300,0,0,10));
         rightLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
-                new PIDFCoefficients(300, 0, 0, 10));
+                new PIDFCoefficients(300,0,0,10));
 
-        rightFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
-        leftFeeder.setDirection(DcMotorSimple.Direction.FORWARD);
-
-        telemetry.addData("Status", "Initialized");
+        telemetry.addLine("READY");
     }
 
-    @Override
-    public void init_loop() {}
-
-    @Override
-    public void start() {}
-
-    // =========================================================
-    // MAIN LOOP
-    // =========================================================
+    // ================= LOOP =================
     @Override
     public void loop() {
 
         limelight.update();
 
-        // ===== Vision Mode: continuously update launcher velocity target =====
-        if (shooterMode == ShooterMode.VISION && limelight.hasTarget()) {
-            double distanceCm     = limelight.getDistanceFromArea();
-            double rpm            = ShooterModel.distanceToRPM(distanceCm);
-            double ticksPerSecond = rpm * 28.0 / 60.0;
-            launcherTarget = ticksPerSecond;
-            launcherMin    = ticksPerSecond * 0.95;
+        // ===== DRIVE =====
+        double f = gamepad2.left_stick_y;
+        double s = -gamepad2.left_stick_x;
+        double r = -gamepad2.right_stick_x;
+        mecanumDrive(f,s,r);
+
+        // ===== SHOOTER TARGET =====
+        if (limelight.hasTarget()) {
+            double d = limelight.getDistanceFromArea();
+            double rpm = useLeftModel ?
+                    ShooterModel.distanceToRPM(d,true) :
+                    ShooterModel.distanceToRPM(d,false);
+
+            launcherTargetTPS = rpm * 28.0 / 60.0;
+            launcherMin = launcherTargetTPS * 0.95;
         }
 
-        // ===== Toggle Vision/Manual mode with BACK button =====
-        if (gamepad1.back && !lastBack) {
-            shooterMode = (shooterMode == ShooterMode.MANUAL)
-                    ? ShooterMode.VISION
-                    : ShooterMode.MANUAL;
-        }
-        lastBack = gamepad1.back;
+        // ===== SHOOT REQUEST =====
+        launchLeft(gamepad1.right_bumper);
+        launchRight(gamepad1.left_bumper);
 
-        // ===== Driver input =====
-        double forward = gamepad2.left_stick_y;
-        double strafe  = -gamepad2.left_stick_x;
-        double rotate  = -gamepad2.right_stick_x;
-
-        // ===== Manual auto-align override (right trigger) =====
-        boolean autoAlignActive = gamepad1.right_trigger > 0.5;
-
-        if (autoAlignActive && limelight.hasTarget()) {
-            double currentYaw = limelight.getTx();
-            double error      = -currentYaw;
-            double derivative = error - previousAlignError;
-            double output     = (error * kP_align) + (derivative * kD_align);
-
-            if (Math.abs(error) < ALIGN_DEADBAND) output = 0;
-            output = Math.max(-MAX_ALIGN_POWER, Math.min(MAX_ALIGN_POWER, output));
-
-            rotate             = output;
-            previousAlignError = error;
-        } else {
-            previousAlignError = 0;
-        }
-
-        mecanumDrive(forward, strafe, rotate);
-
-        // ===== Manual flywheel spin-up (hold Y) =====
-        if (gamepad1.y) {
-            leftLauncher.setVelocity(launcherTarget);
-            rightLauncher.setVelocity(launcherTarget);
-        }
-
-        // ===== Diverter toggle =====
-        if (gamepad1.dpadDownWasPressed()) {
-            switch (diverterDirection) {
-                case LEFT:
-                    diverterDirection = DiverterDirection.RIGHT;
-                    diverter.setPosition(RIGHT_POSITION);
-                    break;
-                case RIGHT:
-                    diverterDirection = DiverterDirection.LEFT;
-                    diverter.setPosition(LEFT_POSITION);
-                    break;
-            }
-        }
-
-        // ===== Intake toggle =====
-        // A = toggle intake IN (both motors roll inward)
-        // X = toggle intake REVERSE (both motors roll outward)
-        // Pressing A while reversing (or X while running) switches cleanly.
-        if (gamepad1.aWasPressed()) {
-            if (intakeState == IntakeState.ON) {
-                intakeState = IntakeState.OFF;
-                setIntakePower(0);
-            } else {
-                intakeState = IntakeState.ON;
-                setIntakePower(1);
-            }
-        }
-
-        if (gamepad1.xWasPressed()) {
-            if (intakeState == IntakeState.REVERSE) {
-                intakeState = IntakeState.OFF;
-                setIntakePower(0);
-            } else {
-                intakeState = IntakeState.REVERSE;
-                setIntakePower(-1);
-            }
-        }
-
-        // ===== Distance preset toggle =====
-        if (gamepad1.dpadUpWasPressed()) {
-            switch (launcherDistance) {
-                case CLOSE:
-                    launcherDistance = LauncherDistance.FAR;
-                    launcherTarget   = LAUNCHER_FAR_TARGET_VELOCITY;
-                    launcherMin      = LAUNCHER_FAR_MIN_VELOCITY;
-                    break;
-                case FAR:
-                    launcherDistance = LauncherDistance.CLOSE;
-                    launcherTarget   = LAUNCHER_CLOSE_TARGET_VELOCITY;
-                    launcherMin      = LAUNCHER_CLOSE_MIN_VELOCITY;
-                    break;
-            }
-        }
-
-        // ===== Vision launch state machines (GP1 bumpers) =====
-        // Right bumper = left shooter, Left bumper = right shooter
-        launchLeft(gamepad1.rightBumperWasPressed());
-        launchRight(gamepad1.leftBumperWasPressed());
-
-        // ===== Manual (no-align) launch state machines (GP2 bumpers) =====
-        // GP2 Right bumper = manual left shot, GP2 Left bumper = manual right shot
-        boolean gp2rb = gamepad2.right_bumper;
-        boolean gp2lb = gamepad2.left_bumper;
-        manualLaunchLeft( gp2rb && !lastGP2RB);
-        manualLaunchRight(gp2lb && !lastGP2LB);
-        lastGP2RB = gp2rb;
-        lastGP2LB = gp2lb;
-
-        // ===== Telemetry =====
-        final double leftRPM  = leftLauncher.getVelocity()  * 60 / 28;
-        final double rightRPM = rightLauncher.getVelocity() * 60 / 28;
-
-        telemetry.addData("Shooter Mode",        shooterMode);
-        telemetry.addData("Launcher Distance",   launcherDistance);
-        telemetry.addData("Auto Align Active",   autoAlignActive);
-        telemetry.addData("Left Launch State",   leftLaunchState);
-        telemetry.addData("Right Launch State",  rightLaunchState);
-        telemetry.addData("Manual Left State",   manualLeftState);
-        telemetry.addData("Manual Right State",  manualRightState);
-        telemetry.addData("Left RPM",            leftRPM);
-        telemetry.addData("Right RPM",           rightRPM);
-        telemetry.addData("Vision Target TPS",   launcherTarget);
+        // ===== TELEMETRY =====
+        telemetry.addData("Mode", useLeftModel ? "LEFT" : "RIGHT");
+        telemetry.addData("Target RPM", launcherTargetTPS * 60 / 28);
+        telemetry.addData("Left RPM", leftLauncher.getVelocity()*60/28);
+        telemetry.addData("Right RPM", rightLauncher.getVelocity()*60/28);
 
         if (limelight.hasTarget()) {
-            telemetry.addData("Limelight tx",      limelight.getTx());
-            telemetry.addData("Distance (cm)",     limelight.getDistanceFromArea());
-            telemetry.addData("L targetOffset",    getTargetOffset(true));
-            telemetry.addData("R targetOffset",    getTargetOffset(false));
+            telemetry.addData("Distance", limelight.getDistanceFromArea());
+            telemetry.addData("TX", limelight.getTx());
         }
-
-        // Manual shot data — always show so you can log it during testing
-        telemetry.addData("Manual L target TPS", manualLeftTarget);
-        telemetry.addData("Manual R target TPS", manualRightTarget);
     }
 
-    @Override
-    public void stop() {}
+    // ================= ALIGN OFFSET FROM YOUR TABLE =================
+    double getTargetOffset(boolean left, double d) {
 
-    // =========================================================
-    // INTAKE HELPER
-    // =========================================================
-    // Drives both intake motors simultaneously in opposite directions
-    // so their rollers both pull inward (or push outward when reversed).
-    //
-    //   power =  1.0 → intake IN  (intake1 forward, intake2 backward)
-    //   power = -1.0 → intake OUT (intake1 backward, intake2 forward)
-    //   power =  0.0 → stop both
-    // =========================================================
-    private void setIntakePower(double power) {
-        intake1.setPower( power);
-        intake2.setPower(-power);
-    }
-    // =========================================================
-    // MECANUM DRIVE
-    // =========================================================
-    void mecanumDrive(double forward, double strafe, double rotate) {
-        double denominator = Math.max(Math.abs(forward) + Math.abs(strafe) + Math.abs(rotate), 1);
-
-        leftFrontPower  = (forward + strafe + rotate) / denominator;
-        rightFrontPower = (forward - strafe - rotate) / denominator;
-        leftBackPower   = (forward - strafe + rotate) / denominator;
-        rightBackPower  = (forward + strafe - rotate) / denominator;
-
-        leftFrontDrive.setPower(leftFrontPower);
-        rightFrontDrive.setPower(rightFrontPower);
-        leftBackDrive.setPower(leftBackPower);
-        rightBackDrive.setPower(rightBackPower);
+        if (left) {
+            if (d < 70) return -1.0;
+            if (d < 90) return -3.0;
+            if (d < 110) return -4.5;
+            if (d < 130) return -2.5;
+            return -2.0;
+        } else {
+            if (d < 70) return 1.0;
+            if (d < 90) return 2.0;
+            if (d < 110) return 6.5;
+            if (d < 130) return 1.6;
+            return 1.0;
+        }
     }
 
-    // =========================================================
-    // DYNAMIC TARGET OFFSET
-    // =========================================================
-    double getTargetOffset(boolean isLeftShooter) {
-        double distanceCm = (limelight != null && limelight.hasTarget())
-                ? limelight.getDistanceFromArea()
-                : 0;
+    // ================= LEFT SHOOT =================
+    void launchLeft(boolean press) {
 
-        double offset = BASE_OFFSET + (distanceCm * DISTANCE_FACTOR);
-        offset += isLeftShooter ? -SHOOTER_OFFSET : SHOOTER_OFFSET;
-        return offset;
-    }
-
-    // =========================================================
-    // ALIGNMENT CHECK
-    // =========================================================
-    public boolean isAligned(boolean isLeftShooter) {
-        if (limelight == null || !limelight.hasTarget()) return false;
-        double targetOffset = getTargetOffset(isLeftShooter);
-        return Math.abs(limelight.getTx() - targetOffset) < ALIGN_DEADBAND;
-    }
-
-    // =========================================================
-    // LEFT LAUNCH STATE MACHINE (vision, with alignment)
-    // State flow: IDLE → ALIGN → SPIN_UP → LAUNCH → LAUNCHING → IDLE
-    // =========================================================
-    void launchLeft(boolean shotRequested) {
-        switch (leftLaunchState) {
+        switch (leftState) {
 
             case IDLE:
-                if (shotRequested && limelight.hasTarget()) {
-                    previousAlignError = 0;
-                    leftLaunchState = LaunchState.ALIGN;
+                if (press && limelight.hasTarget()) {
+                    useLeftModel = true;
+                    leftState = LaunchState.ALIGN;
                 }
                 break;
 
             case ALIGN:
-                if (!limelight.hasTarget()) {
-                    mecanumDrive(0, 0, 0);
-                    leftLaunchState = LaunchState.IDLE;
-                    break;
-                }
+                double d = limelight.getDistanceFromArea();
+                double target = getTargetOffset(true, d);
+                double error = limelight.getTx() - target;
 
-                double leftTargetOffset = getTargetOffset(true);
-                double leftTx           = limelight.getTx();
-                double leftError        = leftTx - leftTargetOffset;
-                double leftDeriv        = leftError - previousAlignError;
-                double leftPower        = -(leftError * kP_align + leftDeriv * kD_align);
+                double power = -(error * kP_align + (error - previousAlignError) * kD_align);
+                power = Math.max(-MAX_ALIGN_POWER, Math.min(MAX_ALIGN_POWER, power));
 
-                if (Math.abs(leftError) < ALIGN_DEADBAND) leftPower = 0;
-                leftPower = Math.max(-MAX_ALIGN_POWER, Math.min(MAX_ALIGN_POWER, leftPower));
+                mecanumDrive(0,0,power);
+                previousAlignError = error;
 
-                mecanumDrive(0, 0, leftPower);
-                previousAlignError = leftError;
-
-                telemetry.addData("[L ALIGN] tx",           leftTx);
-                telemetry.addData("[L ALIGN] targetOffset", leftTargetOffset);
-                telemetry.addData("[L ALIGN] error",        leftError);
-                telemetry.addData("[L ALIGN] power",        leftPower);
-
-                if (isAligned(true)) {
-                    mecanumDrive(0, 0, 0);
-                    previousAlignError = 0;
-                    leftLaunchState = LaunchState.SPIN_UP;
+                if (Math.abs(error) < ALIGN_DEADBAND) {
+                    mecanumDrive(0,0,0);
+                    leftState = LaunchState.SPIN_UP;
                 }
                 break;
 
             case SPIN_UP:
-                leftLauncher.setVelocity(launcherTarget);
-                rightLauncher.setVelocity(launcherTarget);
+                leftLauncher.setVelocity(launcherTargetTPS);
+                rightLauncher.setVelocity(launcherTargetTPS);
 
                 if (leftLauncher.getVelocity() > launcherMin) {
-                    leftLaunchState = LaunchState.LAUNCH;
+                    leftState = LaunchState.LAUNCH;
                 }
                 break;
 
             case LAUNCH:
-                leftFeeder.setPower(FULL_SPEED);
-                leftFeederTimer.reset();
-                leftLaunchState = LaunchState.LAUNCHING;
+                leftFeeder.setPower(1);
+                leftTimer.reset();
+                leftState = LaunchState.LAUNCHING;
                 break;
 
             case LAUNCHING:
-                if (leftFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    leftFeeder.setPower(STOP_SPEED);
-                    leftLaunchState = LaunchState.IDLE;
+                if (leftTimer.seconds() > FEED_TIME_SECONDS) {
+                    leftFeeder.setPower(0);
+                    leftState = LaunchState.IDLE;
                 }
                 break;
         }
     }
 
-    // =========================================================
-    // RIGHT LAUNCH STATE MACHINE (vision, with alignment)
-    // State flow: IDLE → ALIGN → SPIN_UP → LAUNCH → LAUNCHING → IDLE
-    // =========================================================
-    void launchRight(boolean shotRequested) {
-        switch (rightLaunchState) {
+    // ================= RIGHT SHOOT =================
+    void launchRight(boolean press) {
+
+        switch (rightState) {
 
             case IDLE:
-                if (shotRequested && limelight.hasTarget()) {
-                    previousAlignError = 0;
-                    rightLaunchState = LaunchState.ALIGN;
+                if (press && limelight.hasTarget()) {
+                    useLeftModel = false;
+                    rightState = LaunchState.ALIGN;
                 }
                 break;
 
             case ALIGN:
-                if (!limelight.hasTarget()) {
-                    mecanumDrive(0, 0, 0);
-                    rightLaunchState = LaunchState.IDLE;
-                    break;
-                }
+                double d = limelight.getDistanceFromArea();
+                double target = getTargetOffset(false, d);
+                double error = limelight.getTx() - target;
 
-                double rightTargetOffset = getTargetOffset(false);
-                double rightTx           = limelight.getTx();
-                double rightError        = rightTx - rightTargetOffset;
-                double rightDeriv        = rightError - previousAlignError;
-                double rightPower        = -(rightError * kP_align + rightDeriv * kD_align);
+                double power = -(error * kP_align + (error - previousAlignError) * kD_align);
+                power = Math.max(-MAX_ALIGN_POWER, Math.min(MAX_ALIGN_POWER, power));
 
-                if (Math.abs(rightError) < ALIGN_DEADBAND) rightPower = 0;
-                rightPower = Math.max(-MAX_ALIGN_POWER, Math.min(MAX_ALIGN_POWER, rightPower));
+                mecanumDrive(0,0,power);
+                previousAlignError = error;
 
-                mecanumDrive(0, 0, rightPower);
-                previousAlignError = rightError;
-
-                telemetry.addData("[R ALIGN] tx",           rightTx);
-                telemetry.addData("[R ALIGN] targetOffset", rightTargetOffset);
-                telemetry.addData("[R ALIGN] error",        rightError);
-                telemetry.addData("[R ALIGN] power",        rightPower);
-
-                if (isAligned(false)) {
-                    mecanumDrive(0, 0, 0);
-                    previousAlignError = 0;
-                    rightLaunchState = LaunchState.SPIN_UP;
+                if (Math.abs(error) < ALIGN_DEADBAND) {
+                    mecanumDrive(0,0,0);
+                    rightState = LaunchState.SPIN_UP;
                 }
                 break;
 
             case SPIN_UP:
-                leftLauncher.setVelocity(launcherTarget);
-                rightLauncher.setVelocity(launcherTarget);
+                leftLauncher.setVelocity(launcherTargetTPS);
+                rightLauncher.setVelocity(launcherTargetTPS);
 
                 if (rightLauncher.getVelocity() > launcherMin) {
-                    rightLaunchState = LaunchState.LAUNCH;
+                    rightState = LaunchState.LAUNCH;
                 }
                 break;
 
             case LAUNCH:
-                rightFeeder.setPower(FULL_SPEED);
-                rightFeederTimer.reset();
-                rightLaunchState = LaunchState.LAUNCHING;
+                rightFeeder.setPower(1);
+                rightTimer.reset();
+                rightState = LaunchState.LAUNCHING;
                 break;
 
             case LAUNCHING:
-                if (rightFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    rightFeeder.setPower(STOP_SPEED);
-                    rightLaunchState = LaunchState.IDLE;
+                if (rightTimer.seconds() > FEED_TIME_SECONDS) {
+                    rightFeeder.setPower(0);
+                    rightState = LaunchState.IDLE;
                 }
                 break;
         }
     }
 
-    // =========================================================
-    // MANUAL LEFT LAUNCH STATE MACHINE (no alignment)
-    // =========================================================
-    // GP2 RIGHT BUMPER triggers this.
-    // Spins up BOTH launchers to the distance-based velocity,
-    // then fires the LEFT feeder for FEED_TIME_SECONDS.
-    // No robot rotation — driver aims manually.
-    // Use this to build your RPM lookup table:
-    //   stand at a known distance, press GP2 RB, read "Manual L target TPS"
-    //   from telemetry, convert → RPM = TPS * 60 / 28.
-    // =========================================================
-    void manualLaunchLeft(boolean shotRequested) {
-        switch (manualLeftState) {
+    // ================= DRIVE =================
+    void mecanumDrive(double f, double s, double r) {
+        double denom = Math.max(Math.abs(f)+Math.abs(s)+Math.abs(r),1);
 
-            case IDLE:
-                if (shotRequested) {
-                    // Snapshot velocity at trigger time — uses Limelight distance
-                    // if available, otherwise falls back to current launcherTarget.
-                    if (limelight.hasTarget()) {
-                        double distanceCm     = limelight.getDistanceFromArea();
-                        double rpm            = ShooterModel.distanceToRPM(distanceCm);
-                        manualLeftTarget      = rpm * 28.0 / 60.0;
-                    } else {
-                        manualLeftTarget = launcherTarget;
-                    }
-                    manualLeftState = ManualLaunchState.SPIN_UP;
-                }
-                break;
-
-            case SPIN_UP:
-                leftLauncher.setVelocity(manualLeftTarget);
-                rightLauncher.setVelocity(manualLeftTarget);
-
-                // Use the same 95% threshold as the vision path
-                if (leftLauncher.getVelocity() > manualLeftTarget * 0.95) {
-                    manualLeftState = ManualLaunchState.LAUNCH;
-                }
-                break;
-
-            case LAUNCH:
-                leftFeeder.setPower(FULL_SPEED);
-                leftFeederTimer.reset();
-                manualLeftState = ManualLaunchState.LAUNCHING;
-                break;
-
-            case LAUNCHING:
-                if (leftFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    leftFeeder.setPower(STOP_SPEED);
-                    // Let flywheels coast down naturally
-                    leftLauncher.setVelocity(0);
-                    rightLauncher.setVelocity(0);
-                    manualLeftState = ManualLaunchState.IDLE;
-                }
-                break;
-        }
-    }
-
-    // =========================================================
-    // MANUAL RIGHT LAUNCH STATE MACHINE (no alignment)
-    // =========================================================
-    // GP2 LEFT BUMPER triggers this.
-    // Spins up BOTH launchers to the distance-based velocity,
-    // then fires the RIGHT feeder for FEED_TIME_SECONDS.
-    // =========================================================
-    void manualLaunchRight(boolean shotRequested) {
-        switch (manualRightState) {
-
-            case IDLE:
-                if (shotRequested) {
-                    if (limelight.hasTarget()) {
-                        double distanceCm     = limelight.getDistanceFromArea();
-                        double rpm            = ShooterModel.distanceToRPM(distanceCm);
-                        manualRightTarget     = rpm * 28.0 / 60.0;
-                    } else {
-                        manualRightTarget = launcherTarget;
-                    }
-                    manualRightState = ManualLaunchState.SPIN_UP;
-                }
-                break;
-
-            case SPIN_UP:
-                leftLauncher.setVelocity(manualRightTarget);
-                rightLauncher.setVelocity(manualRightTarget);
-
-                if (rightLauncher.getVelocity() > manualRightTarget * 0.95) {
-                    manualRightState = ManualLaunchState.LAUNCH;
-                }
-                break;
-
-            case LAUNCH:
-                rightFeeder.setPower(FULL_SPEED);
-                rightFeederTimer.reset();
-                manualRightState = ManualLaunchState.LAUNCHING;
-                break;
-
-            case LAUNCHING:
-                if (rightFeederTimer.seconds() > FEED_TIME_SECONDS) {
-                    rightFeeder.setPower(STOP_SPEED);
-                    leftLauncher.setVelocity(0);
-                    rightLauncher.setVelocity(0);
-                    manualRightState = ManualLaunchState.IDLE;
-                }
-                break;
-        }
+        leftFrontDrive.setPower((f+s+r)/denom);
+        rightFrontDrive.setPower((f-s-r)/denom);
+        leftBackDrive.setPower((f-s+r)/denom);
+        rightBackDrive.setPower((f+s-r)/denom);
     }
 }

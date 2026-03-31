@@ -143,7 +143,7 @@ public class DecodeSimpleAutoBLUE extends OpMode {
                 if (limelight.hasTarget()) {
 
                     double distance = limelight.getDistanceFromArea();
-                    double rpm = ShooterModel.distanceToRPM(distance) * 1; // boost to prevent undershoot
+                    double rpm = ShooterModel.distanceToRPM(distance,true) * 1; // boost to prevent undershoot
 
                     double tps = rpm * 28.0 / 60.0;
 

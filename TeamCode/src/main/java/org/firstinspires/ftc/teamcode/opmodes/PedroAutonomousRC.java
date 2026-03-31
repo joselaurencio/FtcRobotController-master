@@ -159,7 +159,7 @@ public class PedroAutonomousRC extends OpMode {
                     // Grab distance from AprilTag and convert to launcher velocity
                     if (limelight.hasTarget()) {
                         double distanceCm     = limelight.getDistanceFromArea();
-                        double rpm            = ShooterModel.distanceToRPM(distanceCm);
+                        double rpm            = ShooterModel.distanceToRPM(distanceCm,true);
                         launcherTarget        = rpm * 28.0 / 60.0;
                         launcherMin           = launcherTarget * 0.95;
                     }
@@ -173,7 +173,7 @@ public class PedroAutonomousRC extends OpMode {
                 limelight.update();
                 if (limelight.hasTarget()) {
                     double distanceCm  = limelight.getDistanceFromArea();
-                    double rpm         = ShooterModel.distanceToRPM(distanceCm);
+                    double rpm         = ShooterModel.distanceToRPM(distanceCm,true);
                     launcherTarget     = rpm * 28.0 / 60.0;
                     launcherMin        = launcherTarget * 0.95;
                 }

@@ -44,7 +44,7 @@ public class AimAndShootTeleOp extends OpMode {
             double distance = vision.getDistanceFromArea();
 
             // Convert distance → RPM
-            double targetRPM = ShooterModel.distanceToRPM(distance) *.1;
+            double targetRPM = ShooterModel.distanceToRPM(distance,true) *.1;
 
             // Align drivetrain and spin shooter
             //drivetrain.alignToTarget(tx);

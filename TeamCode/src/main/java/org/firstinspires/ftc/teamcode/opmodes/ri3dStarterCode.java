@@ -495,7 +495,7 @@ public class ri3dStarterCode extends OpMode {
                 break;
 
             case LAUNCH:
-                leftStopper.setPosition(.9);  // open before feeding
+                leftStopper.setPosition(.8);  // open before feeding
                 leftFeeder.setPower(FULL_SPEED);
                 leftFeederTimer.reset();
                 leftLaunchState = LaunchState.LAUNCHING;

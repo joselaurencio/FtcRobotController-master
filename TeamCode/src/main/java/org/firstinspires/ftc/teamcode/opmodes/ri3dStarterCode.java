@@ -19,6 +19,10 @@ import org.firstinspires.ftc.teamcode.subsystems.Shooter;
 //@Disabled
 public class ri3dStarterCode extends OpMode {
 
+    @Override
+    public void stop() {}
+    // =========================================================
+
     // ================= AUTO ALIGN PD =================
     private double kP_align = .08;
     private double kD_align = 0.003;
@@ -67,8 +71,7 @@ public class ri3dStarterCode extends OpMode {
     private DcMotor   rightBackDrive  = null;
     private DcMotorEx leftLauncher    = null;
     private DcMotorEx rightLauncher   = null;
-    private DcMotor   intake1          = null;
-    private DcMotor   intake2          = null;
+    private DcMotorEx   intake1          = null;
     private CRServo   leftFeeder      = null;
     private CRServo   rightFeeder     = null;
     private Servo     diverter        = null;
@@ -153,8 +156,7 @@ public class ri3dStarterCode extends OpMode {
         rightBackDrive  = hardwareMap.get(DcMotor.class,   "right_back_drive");
         leftLauncher    = hardwareMap.get(DcMotorEx.class, "left_launcher");
         rightLauncher   = hardwareMap.get(DcMotorEx.class, "right_launcher");
-        intake1         = hardwareMap.get(DcMotor.class,   "intake1");
-        intake2         = hardwareMap.get(DcMotor.class,   "intake2");
+        intake1         = hardwareMap.get(DcMotorEx.class,   "intake1");
         leftFeeder      = hardwareMap.get(CRServo.class,   "left_feeder");
         rightFeeder     = hardwareMap.get(CRServo.class,   "right_feeder");
         diverter        = hardwareMap.get(Servo.class,     "diverter");
@@ -177,8 +179,7 @@ public class ri3dStarterCode extends OpMode {
         // intake1 and intake2 face opposite directions physically,
         // so setting them both FORWARD here and passing opposite
         // power values in setIntakePower() makes them roll inward together.
-        intake1.setDirection(DcMotorSimple.Direction.REVERSE);
-        intake2.setDirection(DcMotorSimple.Direction.FORWARD);
+        intake1.setDirection(DcMotorSimple.Direction.FORWARD);
 
         leftLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         rightLauncher.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
@@ -193,6 +194,10 @@ public class ri3dStarterCode extends OpMode {
         leftFeeder.setPower(STOP_SPEED);
         rightFeeder.setPower(STOP_SPEED);
 
+        intake1.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        intake1.setZeroPowerBehavior(BRAKE);
+        intake1.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
+                new PIDFCoefficients(10, 0, 0, 1));
         leftLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
                 new PIDFCoefficients(300, 0, 0, 10));
         rightLauncher.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER,
@@ -253,9 +258,9 @@ public class ri3dStarterCode extends OpMode {
         lastBack = gamepad1.back;
 
         // ===== Driver input =====
-        double forward = -gamepad1.left_stick_y;
-        double strafe  = gamepad1.left_stick_x;
-        double rotate  = gamepad1.right_stick_x;
+        double forward = -gamepad2.left_stick_y;
+        double strafe  = gamepad2.left_stick_x;
+        double rotate  = gamepad2.right_stick_x;
 
         // ===== Manual auto-align override (right trigger) =====
         boolean autoAlignActive = gamepad1.right_trigger > 0.5;
@@ -379,23 +384,12 @@ public class ri3dStarterCode extends OpMode {
         telemetry.addData("Manual L target TPS", manualLeftTarget);
         telemetry.addData("Manual R target TPS", manualRightTarget);
     }
-
-    @Override
-    public void stop() {}
-
-    // =========================================================
-    // INTAKE HELPER
-    // =========================================================
-    // Drives both intake motors simultaneously in opposite directions
-    // so their rollers both pull inward (or push outward when reversed).
-    //
-    //   power =  1.0 → intake IN  (intake1 forward, intake2 backward)
-    //   power = -1.0 → intake OUT (intake1 backward, intake2 forward)
-    //   power =  0.0 → stop both
-    // =========================================================
+    private static final double INTAKE_RPM            = 1500.0;
+    private static final double INTAKE_TICKS_PER_REV  = 28.0;
+    private static final double INTAKE_TARGET_VELOCITY = INTAKE_RPM * INTAKE_TICKS_PER_REV / 60.0;
     private void setIntakePower(double power) {
-        intake1.setPower( power);
-        intake2.setPower(-power);
+        // power is -1, 0, or 1 — scale to velocity
+        intake1.setVelocity(power * INTAKE_TARGET_VELOCITY);
     }
     // =========================================================
     // MECANUM DRIVE

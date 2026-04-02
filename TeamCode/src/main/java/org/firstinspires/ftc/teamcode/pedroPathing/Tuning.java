@@ -1,12 +1,7 @@
 package org.firstinspires.ftc.teamcode.pedroPathing;
+import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.*;
 
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.changes;
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.drawOnlyCurrent;
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.draw;
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.follower;
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.stopRobot;
-import static org.firstinspires.ftc.teamcode.pedroPathing.Tuning.telemetryM;
-
+import android.annotation.SuppressLint;
 import com.bylazar.configurables.PanelsConfigurables;
 import com.bylazar.configurables.annotations.Configurable;
 import com.bylazar.configurables.annotations.IgnoreConfigurable;
@@ -15,7 +10,6 @@ import com.bylazar.field.PanelsField;
 import com.bylazar.field.Style;
 import com.bylazar.telemetry.PanelsTelemetry;
 import com.bylazar.telemetry.TelemetryManager;
-import com.pedropathing.ErrorCalculator;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.geometry.*;
 import com.pedropathing.math.*;
@@ -24,6 +18,7 @@ import com.pedropathing.telemetry.SelectableOpMode;
 import com.pedropathing.util.*;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +47,7 @@ public class Tuning extends SelectableOpMode {
         super("Select a Tuning OpMode", s -> {
             s.folder("Localization", l -> {
                 l.add("Localization Test", LocalizationTest::new);
+                l.add("Offsets Tuner", OffsetsTuner::new);
                 l.add("Forward Tuner", ForwardTuner::new);
                 l.add("Lateral Tuner", LateralTuner::new);
                 l.add("Turn Tuner", TurnTuner::new);
@@ -1213,22 +1209,67 @@ class Circle extends OpMode {
 }
 
 /**
+ * This is the OffsetsTuner OpMode. This tracks the movement of the robot as it turns 180 degrees,
+ * and calculates what the robot's strafeX and forwardY offsets should be. Ensure that your strafeX and forwardY offsets
+ * are set to 0 before running this OpMode. After running, input the displayed offsets into your localizer constants.
+ *
+ * @author Havish Sripada - 12808 RevAmped Robotics
+ * @author Baron Henderson
+ */
+class OffsetsTuner extends OpMode {
+    @Override
+    public void init() {
+        follower.setStartingPose(new Pose(72,72));
+        follower.update();
+        drawOnlyCurrent();
+    }
+
+    /** This initializes the PoseUpdater as well as the Panels telemetry. */
+    @Override
+    public void init_loop() {
+        telemetryM.debug("Prerequisite: Make sure both your offsets are set to 0 in your localizer constants.");
+        telemetryM.debug("Turn your robot " + Math.PI + " radians. Your offsets in inches will be shown on the telemetry.");
+        telemetryM.update(telemetry);
+
+        drawOnlyCurrent();
+    }
+
+    /**
+     * This updates the robot's pose estimate, and updates the Panels telemetry with the
+     * calculated offsets and draws the robot.
+     */
+    @Override
+    public void loop() {
+        follower.update();
+
+        telemetryM.debug("Total Angle: " + follower.getTotalHeading());
+
+        telemetryM.debug("The following values are the offsets in inches that should be applied to your localizer.");
+        telemetryM.debug("strafeX: " + ((72.0-follower.getPose().getX()) / 2.0));
+        telemetryM.debug("forwardY: " + ((72.0-follower.getPose().getY()) / 2.0));
+        telemetryM.update(telemetry);
+
+        draw();
+    }
+}
+
+/**
  * This is the Drawing class. It handles the drawing of stuff on Panels Dashboard, like the robot.
  *
  * @author Lazar - 19234
  * @version 1.1, 5/19/2025
  */
 class Drawing {
+
     public static final double ROBOT_RADIUS = 9; // woah
     private static final FieldManager panelsField = PanelsField.INSTANCE.getField();
-
     private static final Style robotLook = new Style(
             "", "#3F51B5", 0.75
     );
+
     private static final Style historyLook = new Style(
             "", "#4CAF50", 0.75
     );
-
     /**
      * This prepares Panels Field for using Pedro Offsets
      */
@@ -1279,6 +1320,19 @@ class Drawing {
         panelsField.moveCursor(x1, y1);
         panelsField.line(x2, y2);
     }
+
+    /**
+     * This is the Predictive Braking Tuner. It runs the robot forward and backward at various power
+     * levels, recording the robot’s velocity and position immediately before braking. The motors are
+     * then set to zero-power brake mode, which represents the fastest theoretical braking the robot
+     * can achieve. Once the robot comes to a complete stop, the tuner measures the stopping distance.
+     * Using the collected data, it generates a velocity-vs-stopping-distance graph and fits a
+     * quadratic curve to model the braking behavior.
+     *
+     * @author Ashay Sarda - 19745 Turtle Walkers
+     * @author Jacob Ophoven - 18535 Frozen Code
+     * @version 1.0, 12/26/2025
+     */
 
     /**
      * This draws a robot at a specified Pose. The heading is represented as a line.

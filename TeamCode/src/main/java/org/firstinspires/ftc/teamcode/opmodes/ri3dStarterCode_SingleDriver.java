@@ -58,6 +58,7 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
     final double RIGHT_POSITION = 0;
 
     private boolean lastBack  = false;
+    private boolean lastY = false;
     private boolean lastGP2RB = false;
     private boolean lastGP2LB = false;
 
@@ -109,6 +110,19 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
     private static final double INTAKE_TICKS_PER_REV   = 28.0;
     private static final double INTAKE_TARGET_VELOCITY  = INTAKE_RPM * INTAKE_TICKS_PER_REV / 60.0;
 
+    // ===== BALL COUNTER =====
+    private int ballCount = 0;
+
+    // How far below target velocity counts as a "ball detected" dip.
+// Tune this — start around 30-40% of target velocity.
+    private static final double BALL_DIP_THRESHOLD  = INTAKE_TARGET_VELOCITY * 0.35;
+
+    // Once dip is detected, ignore further dips for this many ms
+    // (prevents one ball from being counted twice as RPM bounces)
+    private static final long   BALL_DEBOUNCE_MS    = 400;
+
+    private boolean ballDipActive    = false;
+    private long    lastBallDetected = 0;
     double leftFrontPower;
     double rightFrontPower;
     double leftBackPower;
@@ -246,12 +260,19 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
         }
 
         mecanumDrive(forward, strafe, rotate);
+        updateBallCounter();
 
         // ===== Manual flywheel spin-up (hold Y) =====
         if (gamepad1.y) {
             leftLauncher.setVelocity(launcherTarget);
             rightLauncher.setVelocity(launcherTarget);
         }
+
+        // ===== Ball counter reset (Y press) =====
+        if (gamepad1.y && !lastY) {
+            ballCount = 0;
+        }
+        lastY = gamepad1.y;
 
         // ===== Diverter toggle (D-Pad Down) =====
         if (gamepad1.dpadDownWasPressed()) {
@@ -342,6 +363,10 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
             telemetry.addData("L targetOffset",  getTargetOffset(true));
             telemetry.addData("R targetOffset",  getTargetOffset(false));
         }
+        telemetry.addData("Balls Counted",     ballCount);
+        telemetry.addData("Intake Velocity",   intake1.getVelocity());
+        telemetry.addData("Intake Target",     INTAKE_TARGET_VELOCITY);
+        telemetry.addData("Velocity Drop",     INTAKE_TARGET_VELOCITY - intake1.getVelocity());
 
         telemetry.addData("Manual L target TPS", manualLeftTarget);
         telemetry.addData("Manual R target TPS", manualRightTarget);
@@ -352,6 +377,27 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
     // =========================================================
     private void setIntakePower(double power) {
         intake1.setVelocity(power * INTAKE_TARGET_VELOCITY);
+    }
+    private void updateBallCounter() {
+        // Only count when intake is actually running inward
+        if (intakeState != IntakeState.ON) return;
+
+        double currentVelocity = intake1.getVelocity();
+        double velocityDrop    = INTAKE_TARGET_VELOCITY - currentVelocity;
+        long   now             = System.currentTimeMillis();
+
+        // Dip detected — velocity dropped significantly below target
+        if (velocityDrop > BALL_DIP_THRESHOLD && !ballDipActive
+                && (now - lastBallDetected) > BALL_DEBOUNCE_MS) {
+            ballDipActive = true;
+        }
+
+        // Recovery — velocity came back up, ball has passed through
+        if (ballDipActive && velocityDrop < BALL_DIP_THRESHOLD * 0.5) {
+            ballCount++;
+            ballDipActive     = false;
+            lastBallDetected  = now;
+        }
     }
 
     // =========================================================

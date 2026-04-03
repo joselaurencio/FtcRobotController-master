@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.pedroPathing;
 
 import com.pedropathing.control.FilteredPIDFCoefficients;
 import com.pedropathing.control.PIDFCoefficients;
+import com.pedropathing.control.PredictiveBrakingCoefficients;
 import com.pedropathing.follower.Follower;
 import com.pedropathing.follower.FollowerConstants;
 import com.pedropathing.ftc.FollowerBuilder;
@@ -16,29 +17,15 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
-            .mass(11.41)
-            .forwardZeroPowerAcceleration(-20.02836888108038)
-            .lateralZeroPowerAcceleration(-53.12910638685177)
-            .translationalPIDFCoefficients(new PIDFCoefficients(
-                    0.08,
-                    0,
-                    0.005,
-                    0.04
-            ))
-            .headingPIDFCoefficients(new PIDFCoefficients(
-                    0.65,
-                    0.0,
-                    0.00008,
-                    0.04
-            ))
-            .drivePIDFCoefficients(new FilteredPIDFCoefficients(
-                    0.05,
-                    0,
-                    0.000285,
-                    0.6,
-                    0.015
-            ))
-            .centripetalScaling(0.0001)
+            .mass(13.84)
+            .forwardZeroPowerAcceleration(-34.26749419795404)
+            .lateralZeroPowerAcceleration(-63.7850010329825)
+            .translationalPIDFCoefficients(new PIDFCoefficients(.15,0,0.01,0.02))
+            .drivePIDFCoefficients(new FilteredPIDFCoefficients(.0055,0,0.00005,0, 0.007))
+            .headingPIDFCoefficients(new PIDFCoefficients(0.85, 0.0, 0.0055, 0.03))
+            .predictiveBrakingCoefficients(new PredictiveBrakingCoefficients(.05,
+                    0.09525410546488254,0.002505737786531692))
+            .centripetalScaling(0.00007)
             .useSecondaryDrivePIDF(false)
             .useSecondaryHeadingPIDF(false)
             .useSecondaryTranslationalPIDF(false);;
@@ -46,8 +33,8 @@ public class Constants {
     public static PathConstraints pathConstraints = new PathConstraints(0.99, 100, .9, 1);
 
     public static PinpointConstants localizerConstants = new PinpointConstants()
-            .forwardPodY(0)
-            .strafePodX(0)
+            .forwardPodY(-6.667760173)
+            .strafePodX(-3.244701)
             .distanceUnit(DistanceUnit.INCH)
             .hardwareMapName("pinpoint")
             .encoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD)
@@ -55,8 +42,8 @@ public class Constants {
             .strafeEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD);
 
     public static MecanumConstants driveConstants = new MecanumConstants()
-            .xVelocity(63.92616235928271)
-            .yVelocity(51.341422974594)
+            .xVelocity(61.69228333000124)
+            .yVelocity(43.33431406096211)
             .maxPower(1)
             .rightFrontMotorName("right_front_drive")
             .rightRearMotorName("right_back_drive")

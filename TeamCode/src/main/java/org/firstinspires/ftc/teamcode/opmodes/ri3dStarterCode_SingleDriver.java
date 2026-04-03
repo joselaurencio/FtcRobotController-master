@@ -379,8 +379,12 @@ public class ri3dStarterCode_SingleDriver extends OpMode {
         intake1.setVelocity(power * INTAKE_TARGET_VELOCITY);
     }
     private void updateBallCounter() {
-        // Only count when intake is actually running inward
+        // Don't count during a shot — feeder noise can fake a dip
+        if (leftLaunchState  == LaunchState.LAUNCHING ||
+                rightLaunchState == LaunchState.LAUNCHING) return;
         if (intakeState != IntakeState.ON) return;
+        // Only count when intake is actually running inward
+
 
         double currentVelocity = intake1.getVelocity();
         double velocityDrop    = INTAKE_TARGET_VELOCITY - currentVelocity;

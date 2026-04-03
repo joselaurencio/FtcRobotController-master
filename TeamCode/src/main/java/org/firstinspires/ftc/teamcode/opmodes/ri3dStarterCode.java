@@ -384,12 +384,12 @@ public class ri3dStarterCode extends OpMode {
         telemetry.addData("Manual L target TPS", manualLeftTarget);
         telemetry.addData("Manual R target TPS", manualRightTarget);
     }
-    private static final double INTAKE_RPM            = 1500.0;
+    private static final double INTAKE_RPM            = 1000.0;
     private static final double INTAKE_TICKS_PER_REV  = 28.0;
     private static final double INTAKE_TARGET_VELOCITY = INTAKE_RPM * INTAKE_TICKS_PER_REV / 60.0;
     private void setIntakePower(double power) {
         // power is -1, 0, or 1 — scale to velocity
-        intake1.setVelocity(power * INTAKE_TARGET_VELOCITY);
+        intake1.setVelocity(6000);
     }
     // =========================================================
     // MECANUM DRIVE

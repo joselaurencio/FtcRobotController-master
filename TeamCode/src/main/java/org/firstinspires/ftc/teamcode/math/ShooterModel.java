@@ -17,11 +17,11 @@ public class ShooterModel {
     // ===== YOUR NEW REGRESSIONS =====
     // LEFT SHOOTER
     private static final double LEFT_M = 6.23098;
-    private static final double LEFT_B = 2226.76324;
+    private static final double LEFT_B = 2240.76324;
 
     // RIGHT SHOOTER
     private static final double RIGHT_M = 6.70697;
-    private static final double RIGHT_B = 1997.40165;
+    private static final double RIGHT_B = 2010.40165;
 
     /**
      * Returns RPM based on distance and which shooter is being used

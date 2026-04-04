@@ -163,9 +163,6 @@ public class ri3dStarterCode extends OpMode {
         leftStopper  = hardwareMap.get(Servo.class, "left_stopper");
         rightStopper = hardwareMap.get(Servo.class, "right_stopper");
 
-        leftStopper.setPosition(0.7);
-        rightStopper.setPosition(0.7);
-
         limelight = new LimelightVision(hardwareMap);
 
         leftFrontDrive.setDirection(DcMotor.Direction.REVERSE);
@@ -439,7 +436,7 @@ public class ri3dStarterCode extends OpMode {
         switch (leftLaunchState) {
 
             case IDLE:
-                leftStopper.setPosition(0.7);  // close when a new shot is requested
+                leftStopper.setPosition(0.55);  // close when a new shot is requested
                 if (shotRequested && limelight.hasTarget()) {
                     previousAlignError = 0;
 
@@ -489,7 +486,7 @@ public class ri3dStarterCode extends OpMode {
                 break;
 
             case LAUNCH:
-                leftStopper.setPosition(.8);  // open before feeding
+                leftStopper.setPosition(.6);  // open before feeding
                 leftFeeder.setPower(FULL_SPEED);
                 leftFeederTimer.reset();
                 leftLaunchState = LaunchState.LAUNCHING;
@@ -513,7 +510,7 @@ public class ri3dStarterCode extends OpMode {
         switch (rightLaunchState) {
 
             case IDLE:
-                rightStopper.setPosition(0.7);  // close when a new shot is requested
+                rightStopper.setPosition(0.55);  // close when a new shot is requested
                 if (shotRequested && limelight.hasTarget()) {
                     previousAlignError = 0;
 
